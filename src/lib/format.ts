@@ -18,14 +18,36 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-export function formatCurrency(value: number): string {
-  return currencyFormatter.format(value);
+/** Shown instead of "$NaN" or a thrown RangeError when a row carries unusable data. */
+const PLACEHOLDER = "—";
+
+function toFiniteNumber(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
 }
 
-export function formatDate(value: string): string {
-  return dateFormatter.format(new Date(value));
+/**
+ * `Intl.DateTimeFormat.format` throws `RangeError: Invalid time value` on an invalid
+ * Date, which is enough to crash the whole table, so bad input degrades to a dash.
+ */
+function toValidDate(value: string | null | undefined): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function formatDateTime(value: string): string {
-  return dateTimeFormatter.format(new Date(value));
+export function formatCurrency(value: number | null | undefined): string {
+  const amount = toFiniteNumber(value);
+  return amount === null ? PLACEHOLDER : currencyFormatter.format(amount);
+}
+
+export function formatDate(value: string | null | undefined): string {
+  const date = toValidDate(value);
+  return date === null ? PLACEHOLDER : dateFormatter.format(date);
+}
+
+export function formatDateTime(value: string | null | undefined): string {
+  const date = toValidDate(value);
+  return date === null ? PLACEHOLDER : dateTimeFormatter.format(date);
 }
