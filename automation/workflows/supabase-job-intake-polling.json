@@ -1,0 +1,237 @@
+{
+  "name": "Supabase job intake (polling)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "3a5f0c1e-0000-4a00-8000-000000000001",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-220, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "notes": "Опрос раз в минуту. Публичный webhook пока не используется."
+    },
+    {
+      "id": "3a5f0c1e-0000-4a00-8000-000000000002",
+      "name": "Supabase — fetch pending jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/jobs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,status,created_at"
+            },
+            {
+              "name": "status",
+              "value": "eq.pending"
+            },
+            {
+              "name": "order",
+              "value": "created_at.asc"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "До 50 заявок в статусе pending, от старых к новым. select ограничен id/status/created_at: email и описание в n8n не выгружаются."
+    },
+    {
+      "id": "3a5f0c1e-0000-4a00-8000-000000000003",
+      "name": "Supabase — claim job processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/claim_job_for_processing",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_job_id\": \"{{ $json.id }}\",\n  \"p_idempotency_key\": \"job.created:{{ $json.id }}\",\n  \"p_workflow_execution_id\": \"{{ $execution.id }}\"\n}",
+        "options": {}
+      },
+      "notes": "Атомарный захват заявки. Создаёт audit-запись received/processing. true — заявка захвачена этим запуском, false — событие уже обработано ранее."
+    },
+    {
+      "id": "3a5f0c1e-0000-4a00-8000-000000000004",
+      "name": "Claim succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [440, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "claim-returned-true",
+              "leftValue": "={{ $json.data }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "notes": "RPC возвращает голый boolean, n8n оборачивает его в поле data. Ветка false намеренно ни к чему не подключена: повторное событие завершается штатно, без ошибки."
+    },
+    {
+      "id": "3a5f0c1e-0000-4a00-8000-000000000005",
+      "name": "Supabase — mark job in progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, -60],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/jobs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Supabase — fetch pending jobs').item.json.id }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"in_progress\"\n}",
+        "options": {}
+      },
+      "notes": "Выполняется только после успешного захвата. Prefer: return=minimal — Supabase не возвращает строку заявки обратно в n8n."
+    },
+    {
+      "id": "3a5f0c1e-0000-4a00-8000-000000000006",
+      "name": "Supabase — audit triaged",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, -60],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/job_processing_audit",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"job_id\": \"{{ $('Supabase — fetch pending jobs').item.json.id }}\",\n  \"event_type\": \"job.created\",\n  \"step\": \"triaged\",\n  \"outcome\": \"succeeded\",\n  \"idempotency_key\": \"job.created:{{ $('Supabase — fetch pending jobs').item.json.id }}\",\n  \"workflow_execution_id\": \"{{ $execution.id }}\",\n  \"details\": {\n    \"source\": \"polling\",\n    \"poll_interval_minutes\": 1,\n    \"status_set\": \"in_progress\"\n  }\n}",
+        "options": {}
+      },
+      "notes": "details содержит только техническую диагностику: ни email, ни описания, ни полного payload, ни ключей. Уникальность (idempotency_key, step) защищает этот этап от дубля."
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase — fetch pending jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase — fetch pending jobs": {
+      "main": [
+        [
+          {
+            "node": "Supabase — claim job processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase — claim job processing": {
+      "main": [
+        [
+          {
+            "node": "Claim succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Supabase — mark job in progress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Supabase — mark job in progress": {
+      "main": [
+        [
+          {
+            "node": "Supabase — audit triaged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
