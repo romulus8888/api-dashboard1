@@ -19,9 +19,10 @@ Workflow импортируется **неактивным** (`active: false`) �
 | `Claim succeeded?` | Продолжает только при `true` |
 | `Supabase — mark job in progress` | `PATCH /rest/v1/jobs?id=eq.<job_id>` → `status = in_progress` |
 | `Supabase — audit triaged` | `POST /rest/v1/job_processing_audit`: `step = triaged`, `outcome = succeeded` |
+| `Supabase — complete intake claim` | `PATCH /rest/v1/job_processing_audit`: строка `received` переводится из `processing` в `succeeded` |
 
 Из заявки выбираются только `id`, `status` и `created_at`: email, описание и
-бюджет в n8n не попадают. Оба пишущих запроса идут с `Prefer: return=minimal`,
+бюджет в n8n не попадают. Все пишущие запросы идут с `Prefer: return=minimal`,
 поэтому Supabase не возвращает содержимое строк обратно в историю выполнений.
 
 Ветка `false` у `Claim succeeded?` намеренно ни к чему не подключена. `false`
@@ -37,15 +38,23 @@ Workflow импортируется **неактивным** (`active: false`) �
 
 ## Замена placeholder URL
 
-В четырёх HTTP-нодах стоит адрес-заглушка:
+Во всех пяти HTTP-нодах стоит адрес-заглушка:
 
 ```
 https://YOUR_PROJECT_REF.supabase.co/rest/v1/...
 ```
 
-Замените `YOUR_PROJECT_REF` на реф своего проекта Supabase (Project Settings →
-Data API → Project URL). Пути `/rest/v1/jobs`, `/rest/v1/rpc/claim_job_for_processing`
-и `/rest/v1/job_processing_audit` менять не нужно.
+Заменять нужно **только** `YOUR_PROJECT_REF` — на реф своего проекта Supabase
+(Project Settings → Data API → Project URL). Полный путь endpoint сохраняется
+как есть:
+
+| Нода | Endpoint |
+| --- | --- |
+| `Supabase — fetch pending jobs` | `/rest/v1/jobs` |
+| `Supabase — claim job processing` | `/rest/v1/rpc/claim_job_for_processing` |
+| `Supabase — mark job in progress` | `/rest/v1/jobs` |
+| `Supabase — audit triaged` | `/rest/v1/job_processing_audit` |
+| `Supabase — complete intake claim` | `/rest/v1/job_processing_audit` |
 
 Реального project ref в репозитории нет и быть не должно — правки делаются
 только в вашем локальном n8n.
@@ -58,7 +67,7 @@ Data API → Project URL). Пути `/rest/v1/jobs`, `/rest/v1/rpc/claim_job_for
 **Вариант 1 (рекомендуемый) — Supabase API.**
 *Credentials → New → Supabase API*: укажите host проекта и `service_role` key.
 n8n сам подставит оба обязательных заголовка — `apikey` и
-`Authorization: Bearer <key>`. Все четыре ноды уже настроены на этот тип
+`Authorization: Bearer <key>`. Все пять HTTP-нод уже настроены на этот тип
 credential, останется только выбрать созданную запись в каждой ноде.
 
 **Вариант 2 — Header Auth.**
@@ -97,9 +106,16 @@ order by created_at;
 Ожидаемый результат:
 
 - `jobs.status` = `in_progress`;
-- две audit-записи по заявке: `received` / `processing` (создана RPC) и
-  `triaged` / `succeeded` (создана последней нодой);
+- две audit-записи по заявке: `received` / `succeeded` (создана RPC как
+  `processing` и закрыта завершающей нодой) и `triaged` / `succeeded`;
 - в обеих `workflow_execution_id` совпадает с ID запуска n8n.
+
+Если выполнение оборвалось раньше завершающей ноды, строка `received` так и
+останется в состоянии `processing`. Это не мусор, а намеренный сигнал:
+незакрытый `processing` означает начатую, но не доведённую до конца обработку.
+Именно по нему будущий error workflow (и запрос из
+`docs/supabase-processing-audit.md` по индексу `outcome in ('processing',
+'failed')`) сможет находить зависшие заявки.
 
 Повторный запуск на той же заявке проверяет идемпотентность: RPC вернёт
 `false`, ветка `true` не выполнится, новых записей не появится. Заявка при этом
@@ -113,8 +129,8 @@ order by created_at;
   следующий этап.
 - Не обрабатывает ошибки отдельной веткой: неуспешный HTTP-запрос завершает
   выполнение ошибкой, которая видна в *Executions*. Запись `failed` в аудит
-  пока не пишется.
-- Не завершает запись `received`: она остаётся в состоянии `processing`.
+  пока не пишется, а незакрытый `received` / `processing` остаётся признаком
+  оборванной обработки.
 
 ## Как отключить
 

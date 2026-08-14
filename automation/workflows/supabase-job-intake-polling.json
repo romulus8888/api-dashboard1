@@ -96,7 +96,7 @@
           "conditions": [
             {
               "id": "claim-returned-true",
-              "leftValue": "={{ $json.data }}",
+              "leftValue": "={{ $json }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -110,7 +110,7 @@
         "looseTypeValidation": true,
         "options": {}
       },
-      "notes": "RPC возвращает голый boolean, n8n оборачивает его в поле data. Ветка false намеренно ни к чему не подключена: повторное событие завершается штатно, без ошибки."
+      "notes": "RPC возвращает голый boolean, без объекта-обёртки, поэтому проверяется сам элемент ($json), а не поле в нём. Ветка false намеренно ни к чему не подключена: повторное событие завершается штатно, без ошибки."
     },
     {
       "id": "3a5f0c1e-0000-4a00-8000-000000000005",
@@ -174,6 +174,50 @@
         "options": {}
       },
       "notes": "details содержит только техническую диагностику: ни email, ни описания, ни полного payload, ни ключей. Уникальность (idempotency_key, step) защищает этот этап от дубля."
+    },
+    {
+      "id": "3a5f0c1e-0000-4a00-8000-000000000007",
+      "name": "Supabase — complete intake claim",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, -60],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/job_processing_audit",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "job_id",
+              "value": "=eq.{{ $('Supabase — fetch pending jobs').item.json.id }}"
+            },
+            {
+              "name": "step",
+              "value": "eq.received"
+            },
+            {
+              "name": "idempotency_key",
+              "value": "=eq.job.created:{{ $('Supabase — fetch pending jobs').item.json.id }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"outcome\": \"succeeded\"\n}",
+        "options": {}
+      },
+      "notes": "Закрывает захват: строка received переходит из processing в succeeded. Фильтр по job_id + step + idempotency_key адресует ровно одну строку. Тело содержит только outcome — персональных данных и секретов здесь нет."
     }
   ],
   "connections": {
@@ -227,6 +271,17 @@
         [
           {
             "node": "Supabase — audit triaged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase — audit triaged": {
+      "main": [
+        [
+          {
+            "node": "Supabase — complete intake claim",
             "type": "main",
             "index": 0
           }
