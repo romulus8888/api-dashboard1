@@ -1,0 +1,72 @@
+# Локальное окружение n8n для разработки автоматизации обработки заявок.
+#
+# Состав намеренно минимальный: сам n8n и отдельный PostgreSQL под его
+# внутреннее состояние (workflows, credentials, история запусков). Это НЕ база
+# приложения — заявки по-прежнему живут в Supabase, к которой это окружение
+# сейчас не подключается.
+#
+# Запуск: docker compose --env-file .env up -d
+
+name: n8n-local
+
+services:
+  # Внутренняя БД n8n. Порт наружу не публикуется: доступ к ней нужен только
+  # контейнеру n8n через внутреннюю сеть compose по имени хоста `postgres`.
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${N8N_DB_NAME}
+      POSTGRES_USER: ${N8N_DB_USER}
+      POSTGRES_PASSWORD: ${N8N_DB_PASSWORD:?N8N_DB_PASSWORD не задан в .env}
+    volumes:
+      - n8n_postgres_data:/var/lib/postgresql/data
+    # n8n падает при старте, если БД ещё не принимает соединения, поэтому
+    # готовность проверяется явно, а не по факту запуска контейнера.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${N8N_DB_USER} -d ${N8N_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Привязка к 127.0.0.1: UI доступен на http://localhost:5678, но не
+    # выставлен в локальную сеть с других машин.
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      # Хранение состояния в PostgreSQL вместо SQLite по умолчанию.
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
+      DB_POSTGRESDB_USER: ${N8N_DB_USER}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD:?N8N_DB_PASSWORD не задан в .env}
+      # Ключ шифрования credentials. При его потере или смене все сохранённые
+      # credentials станут нечитаемыми.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY не задан в .env}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+      TZ: ${GENERIC_TIMEZONE}
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL}
+      # Базовый адрес, который n8n подставляет в webhook-URL нод. Пока это
+      # localhost; для внешних вызовов понадобится публичный HTTPS-адрес.
+      WEBHOOK_URL: ${WEBHOOK_URL}
+      # Отдельный процесс для выполнения кода нод — рекомендуемый режим в
+      # актуальных версиях n8n.
+      N8N_RUNNERS_ENABLED: "true"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+# Именованные volumes: данные переживают пересоздание контейнеров и удаляются
+# только явной командой (см. README).
+volumes:
+  n8n_data:
+  n8n_postgres_data:
