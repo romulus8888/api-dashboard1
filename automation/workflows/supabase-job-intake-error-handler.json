@@ -1,0 +1,89 @@
+{
+  "name": "Supabase job intake — error handler",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "7b21d4a3-0000-4a00-8000-000000000001",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {},
+      "notes": "Срабатывает, когда падает workflow, у которого этот назначен в Settings → Error Workflow. Даёт execution.id упавшего запуска, имя ноды и текст ошибки."
+    },
+    {
+      "id": "7b21d4a3-0000-4a00-8000-000000000002",
+      "name": "Supabase — mark intake claim failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/job_processing_audit",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "workflow_execution_id",
+              "value": "=eq.{{ $json.execution.id }}"
+            },
+            {
+              "name": "step",
+              "value": "eq.received"
+            },
+            {
+              "name": "outcome",
+              "value": "eq.processing"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"outcome\": \"failed\",\n  \"error_message\": {{ JSON.stringify(('n8n intake failed at node ' + ($json.execution?.lastNodeExecuted ?? 'unknown') + ': ' + ($json.execution?.error?.message ?? 'no error message')).replace(/\\s+/g, ' ').slice(0, 300)) }},\n  \"details\": {\n    \"source\": \"error_handler\",\n    \"failed_node\": {{ JSON.stringify($json.execution?.lastNodeExecuted ?? 'unknown') }}\n  }\n}",
+        "options": {}
+      },
+      "notes": "Фильтр step=received + outcome=processing адресует только незакрытый захват этого запуска: успешные и уже помеченные failed строки не трогаются. В error_message идут только имя ноды и текст ошибки, обрезанные до 300 символов; email, description, payload и ключи не передаются. Prefer: return=minimal — Supabase ничего не возвращает обратно."
+    },
+    {
+      "id": "7b21d4a3-0000-4a00-8000-000000000003",
+      "name": "Telegram notification (later)",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [520, -60],
+      "parameters": {
+        "width": 420,
+        "height": 220,
+        "content": "## Здесь позже появится уведомление\n\nСюда, после ноды `Supabase — mark intake claim failed`, подключается Telegram-нода (или другой канал алертов).\n\nСейчас её нет намеренно: Telegram credential и chat ID ещё не созданы, а класть их в JSON репозитория нельзя.\n\nЧто передавать в сообщение: `job_id`, имя упавшей ноды, execution ID и ссылку на запуск. Что не передавать: email клиента, описание заявки, ключи.\n\nПодробности — `automation/workflows/error-handler-README.md`."
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase — mark intake claim failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
