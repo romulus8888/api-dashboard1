@@ -108,9 +108,11 @@ npm install
 npm run dev
 ```
 
+- Intake form: [http://localhost:3000](http://localhost:3000)
+- Internal dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
+
 The app expects a Supabase project URL and anon key as `NEXT_PUBLIC_*`
-variables in `.env.local`. Open <http://localhost:3000> for the intake form and
-<http://localhost:3000/dashboard> for the internal view.
+variables in `.env.local`.
 
 ### Database
 
@@ -127,8 +129,10 @@ cp .env.example .env
 docker compose --env-file .env up -d
 ```
 
-n8n runs on <http://localhost:5678>. Setup details, including how to stop the
-stack without deleting data: `automation/README.md`.
+- n8n UI: [http://localhost:5678](http://localhost:5678)
+
+Setup details, including how to stop the stack without deleting data:
+`automation/README.md`.
 
 Then import the two workflows and connect credentials:
 
