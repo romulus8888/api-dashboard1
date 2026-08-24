@@ -62,14 +62,31 @@
     },
     {
       "id": "7b21d4a3-0000-4a00-8000-000000000003",
-      "name": "Telegram notification (later)",
+      "name": "Telegram — notify intake failure",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [500, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=n8n automation failure\n\nWorkflow: {{ $('Error Trigger').item.json.workflow?.name ?? 'unknown' }}\nExecution ID: {{ $('Error Trigger').item.json.execution?.id ?? 'unknown' }}\nFailed node: {{ $('Error Trigger').item.json.execution?.lastNodeExecuted ?? 'unknown' }}\nError: {{ ($('Error Trigger').item.json.execution?.error?.message ?? 'no error message').replace(/\\s+/g, ' ').slice(0, 200) }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "notes": "Credential в JSON не привязан: Telegram API credential выбирается вручную после импорта. chatId — заглушка YOUR_TELEGRAM_CHAT_ID. В тексте только имя workflow, execution ID, имя упавшей ноды и обрезанное до 200 символов сообщение об ошибке: ни email, ни описания заявки, ни payload, ни ключей."
+    },
+    {
+      "id": "7b21d4a3-0000-4a00-8000-000000000004",
+      "name": "Setup note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [520, -60],
+      "position": [460, -260],
       "parameters": {
-        "width": 420,
-        "height": 220,
-        "content": "## Здесь позже появится уведомление\n\nСюда, после ноды `Supabase — mark intake claim failed`, подключается Telegram-нода (или другой канал алертов).\n\nСейчас её нет намеренно: Telegram credential и chat ID ещё не созданы, а класть их в JSON репозитория нельзя.\n\nЧто передавать в сообщение: `job_id`, имя упавшей ноды, execution ID и ссылку на запуск. Что не передавать: email клиента, описание заявки, ключи.\n\nПодробности — `automation/workflows/error-handler-README.md`."
+        "width": 460,
+        "height": 200,
+        "content": "## После импорта настройте вручную\n\n1. **Telegram credential** — создайте *Telegram API* с токеном бота и выберите его в ноде `Telegram — notify intake failure`. В этом JSON credential намеренно не привязан.\n2. **Chat ID** — замените заглушку `YOUR_TELEGRAM_CHAT_ID` на свой.\n\nТокен и chat ID в репозиторий не коммитятся.\n\nИнструкция — `automation/workflows/error-handler-README.md`."
       }
     }
   ],
@@ -79,6 +96,17 @@
         [
           {
             "node": "Supabase — mark intake claim failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase — mark intake claim failed": {
+      "main": [
+        [
+          {
+            "node": "Telegram — notify intake failure",
             "type": "main",
             "index": 0
           }
