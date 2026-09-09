@@ -1,14 +1,23 @@
 # Automated B2B project intake
 
-A working end-to-end intake pipeline for incoming client project requests: a
-Next.js form captures the request, Supabase stores it, and an n8n workflow picks
-it up, claims it exactly once, moves it into processing and records a technical
-audit trail. When automation breaks, a dedicated error workflow closes the open
-claim and sends a Telegram alert.
+> **Prototype warning:** This repository is **not production-ready**. The Next.js
+> demo is publicly deployed on Vercel, but the **dashboard has no authentication**
+> and the browser talks to Supabase with the anon key. Submit **synthetic test
+> data only**. The n8n stack runs **locally**, workflows import as **inactive**,
+> and the Error Workflow must be **assigned manually** in the n8n UI before
+> failure handling works.
 
-The point of this repository is not the form. It is what happens after the form:
-idempotent intake, an auditable processing trail, and failure handling that
-leaves no request silently stuck.
+A technical prototype for incoming project requests: a Next.js form writes to
+Supabase, and an optional local n8n workflow polls for pending rows, performs an
+**atomic single-winner claim** with **duplicate claim suppression** for one
+idempotency key, updates status, and records a technical audit trail. Processing
+**may still fail after a successful claim**; a separate error workflow (when
+configured) marks the open audit row as `failed` and can send a Telegram alert.
+
+**Planned, not implemented yet:** authenticated dashboard, server-side APIs,
+recoverable automation retry (a failed claim currently blocks reuse of the same
+idempotency key until manual audit cleanup or new test data), bilingual `/en` and
+`/ru` routing, and synthetic-only public intake.
 
 ## Business flow
 
@@ -24,8 +33,8 @@ leaves no request silently stuck.
    claim by moving `received` from `processing` to `succeeded`.
 7. If any step fails, the error workflow marks the open claim as `failed` with a
    short technical reason and sends a Telegram notification.
-8. An internal dashboard shows all requests with search, filters and status
-   updates.
+8. An internal dashboard (currently **unauthenticated**) shows requests with
+   search, filters, and manual status updates via the browser anon key.
 
 ## Architecture
 
@@ -156,47 +165,62 @@ Then import the two workflows and connect credentials:
   `created_at`, writes with `Prefer: return=minimal`, and keeps client emails,
   descriptions and payloads out of audit rows, alerts and execution logs.
 
+## Implemented vs planned
+
+| Area | Implemented today | Planned |
+| --- | --- | --- |
+| Next.js intake form + dashboard | Yes (Vercel + local) | Auth, server APIs, `/en` `/ru` |
+| Browser → Supabase `jobs` CRUD (anon key) | Yes | Remove; lock down RLS |
+| Audit table + claim RPC (SQL migration) | In repo; apply manually | Baseline `jobs` migration in repo |
+| n8n intake workflow JSON | Yes; **inactive** after import | Versioned retry keys, status RPC |
+| n8n error workflow + Telegram JSON | Yes; **inactive**; Error Workflow **not in JSON** — assign in n8n Settings | Recoverable requeue without audit deletion |
+| Automated tests / CI | No | Yes |
+| Public webhook / Kafka | No | Future iteration |
+
 ## Current limitations
 
-Stated explicitly, because a portfolio project should not oversell itself:
+Stated explicitly:
 
-- **Polling, not a public webhook.** n8n asks Supabase for new rows once a
-  minute. Supabase Database Webhooks would need a public HTTPS endpoint, which
-  this setup does not have.
-- **No public deployment.** Everything runs locally: the app on `localhost:3000`
-  and n8n in Docker on `localhost:5678`.
-- **No message broker.** There is no Kafka, Redpanda or queue in this project.
-- **Manual verification only.** Scenarios below are reproducible by hand; there
-  is no automated test suite or CI pipeline yet.
-- **Telegram requires local setup.** The bot token and chat ID are configured in
-  n8n after import, never committed.
+- **Next.js is publicly deployed** (e.g. Vercel); **n8n is local only** and does
+  nothing until you import workflows, configure credentials, activate polling, and
+  manually assign the Error Workflow.
+- **No dashboard authentication.** Anyone who can open `/dashboard` can use the
+  app’s client-side Supabase access pattern.
+- **Polling, not a public webhook.** n8n polls once a minute. Supabase Database
+  Webhooks would need a public HTTPS n8n endpoint.
+- **No end-to-end exactly-once guarantee.** The claim RPC provides atomic
+  single-winner intake and duplicate suppression for one idempotency key;
+  processing may fail afterward; external side effects are not idempotent.
+- **Failed claim blocks retry.** After a failed run, `received` / `failed`
+  occupies `('job.created:<job_id>', 'received')`, so `claim_job_for_processing()`
+  returns `false` until manual audit cleanup or new test data. Recoverable retry
+  is planned, not implemented.
+- **No message broker** (Kafka, Redpanda, etc.).
+- **Documented manual verification only** — no automated test suite or CI.
+- **Telegram** requires local bot token and chat ID in n8n credentials.
 
-## Verified scenarios
+## Documented manual verification procedures
 
-Each scenario is reproducible locally with the documented steps and confirmed
-with SQL against Supabase.
+These are **manual runbook steps**, not CI-verified and not shown as applied to
+production. Reproduce locally after applying the audit migration and configuring
+n8n.
 
-**1. Successful intake.** A new request appears as `pending`. The workflow
-claims it, sets `in_progress` and leaves two audit rows: `received` /
-`succeeded` and `triaged` / `succeeded`, both tagged with the n8n execution ID.
+**1. Successful intake.** A test request is `pending`. With the intake workflow
+active, it is claimed, set to `in_progress`, and leaves audit rows `received` /
+`succeeded` and `triaged` / `succeeded`.
 
-**2. Duplicate-safe claim.** Running the workflow again for the same request
-makes `claim_job_for_processing()` return `false`. Execution stops on the false
-branch: no second claim, no duplicate audit rows, no repeated status update.
-The guarantee is a unique constraint on `(idempotency_key, step)` with intake
-using `job.created:<job_id>`, so concurrent workers and retries collide in the
-database rather than in application logic.
+**2. Duplicate claim suppression.** A second claim with the same idempotency key
+returns `false`; no duplicate `received` row. Concurrent workers get the same
+behavior via the unique constraint on `(idempotency_key, step)`.
 
-**3. Failure marks the audit trail.** When a node after the claim fails — the
-documented test points one URL at a non-existent endpoint — the run ends with an
-error and the error workflow flips the open `received` row from `processing` to
-`failed`, storing the failing node name and a truncated error message. A row
-left in `processing` therefore always means "started and never finished", which
-is exactly what monitoring should look for.
+**3. Failure marks audit (requires Error Workflow assigned).** A deliberate
+post-claim failure ends the run; the error handler sets `received` / `failed`.
+The job may remain `pending` while the idempotency key is blocked — see
+limitation above.
 
-**4. Telegram error notification.** The same failure delivers a Telegram message
-containing only the workflow name, execution ID, failing node and a shortened
-error string. No client data, no credentials.
+**4. Telegram alert (requires Telegram credential in n8n).** The error handler can
+send a message with workflow name, execution ID, failing node, and a truncated
+error string — no client payload or secrets.
 
 ## Documentation
 
@@ -211,9 +235,8 @@ error string. No client data, no credentials.
 
 ## Short description
 
-> Automated B2B project-intake pipeline: a Next.js + Supabase request form feeds
-> an n8n workflow that claims each request exactly once through a Postgres RPC,
-> updates its status and writes a full audit trail. Failures are caught by a
-> dedicated error workflow that marks the claim as failed and sends a Telegram
-> alert. Built with idempotency, row-level security and least-privilege access
-> keys as first-class concerns, and documented so a client can run it end to end.
+> B2B intake prototype: Next.js + Supabase form and unauthenticated dashboard on
+> Vercel, plus optional **local** n8n workflows that poll Supabase, perform atomic
+> single-winner claims with duplicate suppression via a Postgres RPC, and write a
+> technical audit trail. Failure handling and Telegram alerts require manual n8n
+> setup. Not production-ready — synthetic test data only.

@@ -1,8 +1,10 @@
 # Audit trail обработки заявок (`job_processing_audit`)
 
-Инфраструктура для будущей автоматической обработки заявок в n8n. На этом этапе
-добавлены только объекты БД — n8n, Telegram и очереди не подключаются, frontend
-и типы TypeScript не меняются.
+SQL-миграция для технического audit trail и RPC `claim_job_for_processing`.
+В репозитории также есть **импортируемые** n8n workflow JSON (polling + error
+handler + Telegram-нода), но они **не подключены автоматически**: n8n локальный,
+workflows неактивны после импорта, Error Workflow назначается вручную в UI.
+Frontend и типы TypeScript этой миграцией не меняются.
 
 Миграция: `supabase/migrations/20260814000000_create_job_processing_audit.sql`.
 

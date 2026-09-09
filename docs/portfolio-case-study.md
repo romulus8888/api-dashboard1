@@ -1,8 +1,9 @@
 # Case study: automated B2B project intake
 
-A small system with a specific goal: take an incoming client request and process
-it automatically without ever losing it, processing it twice, or failing
-silently.
+A technical prototype that explores controlled lead intake: capture a request,
+optionally process it through local n8n automation with an atomic database claim,
+and record what happened. It is **not production-ready** and does not guarantee
+that requests never stall or that processing never fails after a claim.
 
 ## Problem
 
@@ -35,15 +36,20 @@ doing any work, the automation must win an atomic claim on the request. Winning
 is recorded, losing is expected and harmless, and every stage leaves a row
 behind that says what happened.
 
-What is implemented today:
+**Implemented today**
 
-- Validated intake form (react-hook-form + Zod) writing to Supabase.
-- Internal dashboard with search, filters, detail view and status updates.
-- SQL migration adding an audit table, constraints, indexes, RLS and the claim
-  RPC, without touching the existing `jobs` table.
-- Self-hosted n8n in Docker Compose with its own PostgreSQL.
-- Intake workflow: poll, claim, update status, audit, close the claim.
-- Error workflow: mark the open claim failed, notify Telegram.
+- Next.js intake form and **unauthenticated** dashboard (public Vercel deploy).
+- Browser-side Supabase access via the anon key (`src/lib/supabase.ts`, `src/lib/jobs.ts`).
+- SQL migration: audit table, claim RPC, RLS on audit (apply manually).
+- Local n8n Docker Compose; importable workflow JSON (**inactive** after import).
+- Intake workflow design: poll, claim, update status, audit, close claim.
+- Error workflow design: mark `received` failed, optional Telegram (manual setup).
+
+**Planned / not implemented**
+
+- Dashboard authentication, server-side APIs, synthetic-only public intake.
+- Recoverable automation retry (failed claim blocks the same idempotency key today).
+- Bilingual `/en` and `/ru` routing, funnel metrics, CI verification.
 
 ## Architecture
 
@@ -85,9 +91,11 @@ Two trust zones, enforced by the database rather than by convention:
 
 **Idempotency lives in Postgres, not in the workflow.** The claim is a single
 `INSERT ... ON CONFLICT DO NOTHING` inside an RPC. The unique index arbitrates
-between concurrent callers, so exactly one wins. No advisory locks, no
-read-then-write race, no application-level coordination. A duplicate returns
-`false` instead of raising, because a retry is a normal event, not an incident.
+between concurrent callers, so **one winner per idempotency key** for step
+`received`. No advisory locks, no read-then-write race. A duplicate claim returns
+`false` instead of raising. This is **not** an end-to-end exactly-once guarantee:
+processing may fail after a successful claim, and a failed claim can block reuse of
+the same key until manual cleanup.
 
 **The uniqueness scope is `(idempotency_key, step)`, not the key alone.** One
 logical event legitimately produces several audit rows as it moves through the
@@ -129,7 +137,7 @@ placeholders, and the migration is prepared for manual application.
 | Failure | Behaviour |
 | --- | --- |
 | Duplicate event or retry | Claim returns `false`, workflow stops cleanly, no error raised |
-| Two workers at once | Unique constraint lets exactly one through, the other gets `false` |
+| Two workers at once | Unique constraint lets one winner through; the other gets `false` |
 | Unknown job id | Foreign key violation raises — a real defect, not a retry |
 | Failure after the claim | Error workflow sets the open `received` row to `failed` with node name and truncated message, then sends a Telegram alert |
 | Failure before the claim | No audit row exists, nothing to mark; the request stays `pending` and is picked up by the next poll |
@@ -139,23 +147,24 @@ The Telegram message carries the workflow name, execution ID, failing node and a
 200-character error excerpt — enough to start debugging, nothing that leaks
 client data.
 
-## Testing evidence
+## Documented manual verification procedures
 
-All checks are manual and reproducible; the procedures are part of the
-documentation rather than a claim in a README.
+No automated test suite or CI runs these checks. They are **runbook steps** for a
+local environment; they are not evidence of production behavior unless you run
+them yourself.
 
-| Scenario | How it is checked | Expected result |
+| Scenario | How to check manually | Expected result (local) |
 | --- | --- | --- |
-| Successful intake | Submit one test request, run the workflow, query the audit table | `jobs.status = in_progress`; audit rows `received / succeeded` and `triaged / succeeded` sharing one execution ID |
-| Idempotency | Run the workflow twice for the same request | Second RPC call returns `false`; exactly one `received` row; no duplicate status update |
-| Idempotency, self-checking | Run the `DO` block in `supabase-processing-audit.md` | Block raises an exception if the second claim is not `false` or a duplicate row appears |
-| Access control | `has_table_privilege` / `has_function_privilege` for `anon`, `authenticated`, `service_role` | `false`, `false`, `true`; RLS on, policy count zero |
-| Cascade integrity | Inspect `pg_constraint` for the foreign key | `confdeltype = 'c'` |
-| Failure path | Point one post-claim node at a non-existent endpoint, let the schedule run | Run fails, `received` becomes `failed` with the node name recorded, Telegram alert arrives |
+| Successful intake | Test request + active n8n workflow + SQL | `in_progress`; audit `received`/`succeeded` and `triaged`/`succeeded` |
+| Duplicate claim suppression | Second claim with same key | RPC returns `false`; one `received` row |
+| Idempotency SQL block | `DO` block in `supabase-processing-audit.md` | Fails if second claim is not `false` |
+| Audit access control | `has_table_privilege` queries in audit doc | `anon`/`authenticated` denied on audit; `service_role` allowed |
+| Failure path | Broken URL after claim + **Error Workflow assigned** | `received`/`failed`; job may stay `pending` with blocked key |
+| Telegram | Same failure + Telegram credential in n8n | Alert without client payload |
 
-Verification SQL lives in `docs/supabase-processing-audit.md`; the failure
-rehearsal, including how to restore the correct URL afterwards, is in
-`automation/workflows/error-handler-README.md`.
+Migration application and RPC behavior were verified by **reading SQL**, not by
+automated execution in this repository. See `docs/supabase-processing-audit.md`
+and `automation/workflows/error-handler-README.md`.
 
 ## What this demonstrates to a client
 
@@ -163,9 +172,9 @@ rehearsal, including how to restore the correct URL afterwards, is in
   and concurrent workers are handled by design, not by hoping they do not occur.
 - **Database-level thinking.** The correctness guarantee is a constraint and an
   atomic statement, which keeps working no matter how the workflow is rewritten.
-- **Security discipline.** Separate keys per trust zone, RLS with no policies on
-  technical data, secrets kept out of Git and out of the browser, minimal data
-  pulled into third-party tools.
+- **Security direction (partial).** Audit table RLS in migration; `service_role`
+  only in n8n credentials. **Gap:** browser still uses anon key on `jobs`; dashboard
+  is not authenticated — honest scope, not a finished security model.
 - **Operable systems.** Every run is traceable, failures are visible in the data
   and pushed to a human, and rollback instructions ship with the migration.
 - **Honest scope.** Limitations are documented as clearly as the features.

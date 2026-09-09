@@ -9,8 +9,8 @@ worth it.
 
 - Use **test data only**: made-up company names and addresses on
   `@example.com`. Never a real client request.
-- Apply the migration, start n8n, import both workflows, connect credentials and
-  send `/start` to the Telegram bot so the alert can be delivered.
+- Apply the migration, start n8n, import both workflows, **assign Error Workflow
+  in Settings**, connect credentials, and send `/start` to the Telegram bot.
 - Open the tabs in advance: intake form, dashboard, Supabase SQL Editor, n8n
   editor, Telegram. Switching tabs is faster than loading pages on camera.
 - Close unrelated tabs, notifications and anything personal in the browser.
@@ -45,10 +45,10 @@ again. Do not rely on editing it out.
 
 **Screen:** the intake form, fields already filled with test data.
 
-**Say:** "This is an automated intake pipeline for incoming project requests.
-A client submits a request here, and from that point everything is handled
-automatically: the request is claimed exactly once, its status is updated, and
-every step is recorded."
+**Say:** "This is a **prototype** intake pipeline. Use synthetic test data only.
+The form writes to Supabase. Optional local n8n can poll, perform an atomic
+single-winner claim with duplicate suppression per idempotency key, and record
+audit steps. Processing can still fail after a claim."
 
 Submit the form and let the success toast appear.
 
@@ -57,9 +57,10 @@ Submit the form and let the success toast appear.
 **Screen:** the dashboard with the new request visible as `pending`, then the
 Supabase table view or SQL result showing the same row.
 
-**Say:** "The request is stored in Supabase with the status `pending`. The
-browser only ever uses the public anon key — it has no access to anything
-technical."
+**Say:** "The request is stored in Supabase as `pending`. Today the browser uses
+the anon key for both the form and the unauthenticated dashboard — that is a
+known gap, not a finished security model. The audit table is intended to be
+backend-only."
 
 ### 0:40–1:10 — The workflow runs
 
@@ -94,10 +95,11 @@ does not exist and submit another test request."
 
 Show the red execution, then the audit query again.
 
-**Say:** "The run fails after the claim, so a request would normally be left in
-limbo. Instead the error workflow marks the open claim as `failed` and records
-which node broke. A row still sitting in `processing` always means work that
-started and never finished."
+**Say:** "The run fails after the claim. If the Error Workflow is assigned in n8n
+Settings, it marks `received` as `failed` and can alert Telegram. The job may
+stay `pending` while the idempotency key is blocked — recoverable retry is
+planned, not implemented. Mention that failure handling is not automatic from
+import alone."
 
 ### 2:15–2:40 — Telegram alert
 
@@ -111,11 +113,11 @@ ever go into the notification."
 
 **Screen:** the repository README, scrolled to the architecture diagram.
 
-**Say:** "Everything here is documented and reproducible: the SQL migration, the
-Docker setup for n8n and both workflows. Current scope is honest about itself —
-it polls rather than using a public webhook, and it runs locally. The next step
-would be a public HTTPS endpoint and a CRM integration, which the claim function
-already makes safe against duplicate deliveries."
+**Say:** "The Next.js demo can be on Vercel; n8n is local and inactive after
+import. Documented manual procedures cover setup — there is no CI proof. It
+polls, not a public webhook. The claim RPC gives single-winner intake and
+duplicate suppression for one key — not end-to-end exactly-once. Planned: auth,
+synthetic-only intake, recoverable retry."
 
 ## After recording
 

@@ -1,23 +1,26 @@
 import Link from "next/link";
-import { ArrowRight, Clock3, LayoutDashboard, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, Clock3, ClipboardCheck, LayoutDashboard, Sparkles, Zap } from "lucide-react";
 
 import JobForm from "@/components/job-form";
 
 const FEATURES = [
   {
     icon: Zap,
-    title: "Fast triage",
-    description: "Every request is reviewed and prioritized within one business day.",
+    title: "Form to database",
+    description:
+      "Validated intake writes directly to Supabase. Suitable for demos and local development only.",
   },
   {
-    icon: ShieldCheck,
-    title: "Enterprise ready",
-    description: "SOC 2 aligned processes, audit trails, and role-based access.",
+    icon: ClipboardCheck,
+    title: "Atomic claim",
+    description:
+      "Optional n8n workflow uses a Postgres RPC for single-winner claims and duplicate suppression per idempotency key.",
   },
   {
     icon: Clock3,
-    title: "Live status",
-    description: "Track progress from pending to completed without chasing updates.",
+    title: "Status tracking",
+    description:
+      "A simple dashboard lists requests and supports manual status updates. Authentication is not implemented yet.",
   },
 ];
 
@@ -43,6 +46,15 @@ export default function Home() {
       </header>
 
       <main className="flex-1">
+        <div
+          role="alert"
+          className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center text-sm text-amber-900"
+        >
+          <strong>Prototype — not production-ready.</strong> The dashboard has no login. Submit
+          only synthetic test data. n8n automation is local, inactive after import, and not wired
+          to this Vercel deployment.
+        </div>
+
         <section className="relative overflow-hidden">
           <div
             aria-hidden="true"
