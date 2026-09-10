@@ -10,18 +10,19 @@
 --   Every real status change (including INSERT) appends to
 --   `lead_status_history` via trigger. No-op status updates produce no row.
 --   `transition_lead_status()` is the intended application/n8n interface; it
---   sets transaction-local context consumed by the trigger (cleared after use).
+--   sets transaction-local context consumed by the trigger. The RPC saves and
+--   restores prior GUC values on every exit path.
 --
 -- Outcome timestamps
 --   `trg_apply_lead_status_outcomes` keeps won_at/lost_at/loss_reason/
 --   duplicate_of_lead_id consistent for RPC and direct SQL status writes.
 --
--- Actor attribution trust boundary
---   Non-null changed_by must reference an active operator_profiles row.
---   Authenticated callers (auth.uid() present) cannot attribute to another
---   operator. service_role is trusted and may supply a validated operator id
---   when acting through the server API; it is not prevented from impersonation.
---   System/SQL paths may record NULL changed_by.
+-- Actor attribution trust boundary (Phase 1)
+--   transition_lead_status is executable only by service_role. NULL changed_by
+--   means system automation. Non-null changed_by must reference an active
+--   operator at write time. service_role is trusted to supply the operator
+--   chosen by the future server API. Phase 3 server authorization will verify
+--   the authenticated user before invoking this RPC.
 --
 -- Security
 --   RLS enabled on all new tables with zero policies. Explicit REVOKE for
@@ -170,12 +171,11 @@ create table public.leads (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
-  constraint leads_won_lost_timestamps_exclusive
-    check (
-      not (won_at is not null and lost_at is not null)
-      and (won_at is null or status = 'won')
-      and (lost_at is null or status = 'lost')
-    ),
+  constraint leads_won_status_iff_won_at
+    check ((status = 'won') = (won_at is not null)),
+
+  constraint leads_lost_status_iff_lost_at
+    check ((status = 'lost') = (lost_at is not null)),
 
   constraint leads_loss_reason_only_when_lost
     check (loss_reason is null or status = 'lost'),
@@ -188,7 +188,7 @@ comment on table public.leads is
   'Future system-of-record for leads. Legacy public.jobs remains untouched in Phase 1.';
 
 comment on column public.leads.owner_id is
-  'Assigned operator. FK to operator_profiles so only registered operators may own leads.';
+  'Assigned operator. FK to operator_profiles; new assignments require an active operator. Existing ownership is retained when an operator is later deactivated.';
 
 comment on column public.leads.fingerprint is
   'Normalized deduplication hash (e.g. email). Industry-neutral; semantics defined by application.';
@@ -280,7 +280,7 @@ create table public.lead_comments (
 );
 
 comment on column public.lead_comments.author_id is
-  'Comment author must be a registered operator (operator_profiles).';
+  'Comment author must be an active operator at insert time. Historical comments remain when an operator is later deactivated.';
 
 create index lead_comments_lead_id_created_at_idx
   on public.lead_comments (lead_id, created_at desc);
@@ -381,26 +381,24 @@ language plpgsql
 set search_path = pg_catalog, pg_temp
 as $$
 begin
-  if tg_op = 'INSERT' or (tg_op = 'UPDATE' and old.status is distinct from new.status) then
-    if new.status = 'won' then
-      new.won_at := pg_catalog.coalesce(new.won_at, pg_catalog.now());
-      new.lost_at := null;
-      new.loss_reason := null;
-      new.duplicate_of_lead_id := null;
-    elsif new.status = 'lost' then
-      new.lost_at := pg_catalog.coalesce(new.lost_at, pg_catalog.now());
-      new.won_at := null;
-      new.duplicate_of_lead_id := null;
-    elsif new.status = 'duplicate' then
-      new.won_at := null;
-      new.lost_at := null;
-      new.loss_reason := null;
-    else
-      new.won_at := null;
-      new.lost_at := null;
-      new.loss_reason := null;
-      new.duplicate_of_lead_id := null;
-    end if;
+  if new.status = 'won' then
+    new.won_at := pg_catalog.coalesce(new.won_at, pg_catalog.now());
+    new.lost_at := null;
+    new.loss_reason := null;
+    new.duplicate_of_lead_id := null;
+  elsif new.status = 'lost' then
+    new.lost_at := pg_catalog.coalesce(new.lost_at, pg_catalog.now());
+    new.won_at := null;
+    new.duplicate_of_lead_id := null;
+  elsif new.status = 'duplicate' then
+    new.won_at := null;
+    new.lost_at := null;
+    new.loss_reason := null;
+  else
+    new.won_at := null;
+    new.lost_at := null;
+    new.loss_reason := null;
+    new.duplicate_of_lead_id := null;
   end if;
 
   return new;
@@ -413,10 +411,105 @@ create trigger leads_apply_status_outcomes
   execute function public.trg_apply_lead_status_outcomes();
 
 comment on function public.trg_apply_lead_status_outcomes() is
-  'Keeps won_at/lost_at and outcome-specific columns consistent on every real status change.';
+  'Keeps won_at/lost_at and outcome-specific columns consistent on status writes, including same-value status updates.';
 
 -- ----------------------------------------------------------------------------
--- 10. Actor validation (shared by RPC and history trigger)
+-- 10. Reject outcome timestamp drift without a status transition
+-- ----------------------------------------------------------------------------
+create or replace function public.trg_reject_lead_outcome_timestamp_drift()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, pg_temp
+as $$
+begin
+  if tg_op = 'UPDATE' and old.status is not distinct from new.status then
+    if old.won_at is distinct from new.won_at
+       or old.lost_at is distinct from new.lost_at then
+      raise exception
+        'outcome timestamps may only change alongside a status transition';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger leads_reject_outcome_timestamp_drift
+  before update on public.leads
+  for each row
+  execute function public.trg_reject_lead_outcome_timestamp_drift();
+
+comment on function public.trg_reject_lead_outcome_timestamp_drift() is
+  'Prevents clearing or altering won_at/lost_at while status is unchanged.';
+
+-- ----------------------------------------------------------------------------
+-- 11. Active operator validation (owner assignment and comments)
+-- ----------------------------------------------------------------------------
+create or replace function public.validate_active_operator_assignment(p_operator_id uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = pg_catalog, pg_temp
+as $$
+begin
+  if p_operator_id is null then
+    raise exception 'validate_active_operator_assignment: operator id is required';
+  end if;
+
+  if not exists (
+    select 1
+    from public.operator_profiles op
+    where op.id = p_operator_id
+      and op.is_active
+  ) then
+    raise exception
+      'validate_active_operator_assignment: % is not an active operator',
+      p_operator_id;
+  end if;
+end;
+$$;
+
+create or replace function public.trg_validate_active_lead_owner()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, pg_temp
+as $$
+begin
+  if new.owner_id is not null
+     and (tg_op = 'INSERT' or old.owner_id is distinct from new.owner_id) then
+    perform public.validate_active_operator_assignment(new.owner_id);
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger leads_validate_active_owner
+  before insert or update of owner_id on public.leads
+  for each row
+  execute function public.trg_validate_active_lead_owner();
+
+create or replace function public.trg_validate_active_comment_author()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, pg_temp
+as $$
+begin
+  perform public.validate_active_operator_assignment(new.author_id);
+  return new;
+end;
+$$;
+
+create trigger lead_comments_validate_active_author
+  before insert on public.lead_comments
+  for each row
+  execute function public.trg_validate_active_comment_author();
+
+comment on function public.validate_active_operator_assignment(uuid) is
+  'Requires an active operator_profiles row for new owner assignments and new comments.';
+
+-- ----------------------------------------------------------------------------
+-- 12. Actor validation for status history (shared by RPC and history trigger)
 -- ----------------------------------------------------------------------------
 create or replace function public.validate_lead_status_actor(p_actor_id uuid)
 returns void
@@ -424,8 +517,6 @@ language plpgsql
 security invoker
 set search_path = pg_catalog, pg_temp
 as $$
-declare
-  v_role text;
 begin
   if p_actor_id is null then
     return;
@@ -441,26 +532,31 @@ begin
       'validate_lead_status_actor: % is not an active operator',
       p_actor_id;
   end if;
-
-  v_role := pg_catalog.coalesce(
-    pg_catalog.nullif(pg_catalog.current_setting('request.jwt.claim.role', true), ''),
-    auth.role()
-  );
-
-  if v_role = 'authenticated' then
-    if auth.uid() is distinct from p_actor_id then
-      raise exception
-        'validate_lead_status_actor: authenticated caller cannot attribute change to another operator';
-    end if;
-  end if;
 end;
 $$;
 
 comment on function public.validate_lead_status_actor(uuid) is
-  'Ensures changed_by references an active operator. Authenticated callers must match auth.uid(). service_role is trusted.';
+  'Non-null changed_by must reference an active operator at write time. service_role is trusted; Phase 3 server auth verifies callers before RPC use.';
 
 -- ----------------------------------------------------------------------------
--- 11. Status history trigger (final enforcement boundary)
+-- 13. Attribution GUC helpers
+-- ----------------------------------------------------------------------------
+create or replace function public.clear_lead_status_attribution_gucs()
+returns void
+language sql
+set search_path = pg_catalog, pg_temp
+as $$
+  select
+    pg_catalog.set_config('lead.status_change_source', '', true),
+    pg_catalog.set_config('lead.status_changed_by', '', true),
+    pg_catalog.set_config('lead.status_change_reason', '', true);
+$$;
+
+comment on function public.clear_lead_status_attribution_gucs() is
+  'Clears transaction-local lead status attribution settings.';
+
+-- ----------------------------------------------------------------------------
+-- 14. Status history trigger (final enforcement boundary)
 -- ----------------------------------------------------------------------------
 create or replace function public.trg_record_lead_status_history()
 returns trigger
@@ -474,67 +570,70 @@ declare
   v_reason text;
   v_changed_by_raw text;
 begin
-  v_change_source := pg_catalog.coalesce(
-    pg_catalog.nullif(pg_catalog.current_setting('lead.status_change_source', true), ''),
-    'sql'
-  );
-
-  v_reason := pg_catalog.nullif(pg_catalog.current_setting('lead.status_change_reason', true), '');
-
-  v_changed_by_raw := pg_catalog.nullif(pg_catalog.current_setting('lead.status_changed_by', true), '');
-  if v_changed_by_raw is not null then
-    v_changed_by := v_changed_by_raw::uuid;
-    perform public.validate_lead_status_actor(v_changed_by);
-  else
-    v_changed_by := null;
-  end if;
-
-  if tg_op = 'INSERT' then
-    insert into public.lead_status_history (
-      lead_id,
-      from_status,
-      to_status,
-      changed_by,
-      change_source,
-      reason
-    )
-    values (
-      new.id,
-      null,
-      new.status,
-      v_changed_by,
-      v_change_source,
-      v_reason
+  begin
+    v_change_source := pg_catalog.coalesce(
+      pg_catalog.nullif(pg_catalog.current_setting('lead.status_change_source', true), ''),
+      'sql'
     );
-  elsif tg_op = 'UPDATE' then
-    if old.status is not distinct from new.status then
-      return new;
+
+    v_reason := pg_catalog.nullif(pg_catalog.current_setting('lead.status_change_reason', true), '');
+
+    v_changed_by_raw := pg_catalog.nullif(pg_catalog.current_setting('lead.status_changed_by', true), '');
+    if v_changed_by_raw is not null then
+      v_changed_by := v_changed_by_raw::uuid;
+      perform public.validate_lead_status_actor(v_changed_by);
+    else
+      v_changed_by := null;
     end if;
 
-    insert into public.lead_status_history (
-      lead_id,
-      from_status,
-      to_status,
-      changed_by,
-      change_source,
-      reason
-    )
-    values (
-      new.id,
-      old.status,
-      new.status,
-      v_changed_by,
-      v_change_source,
-      v_reason
-    );
-  end if;
+    if tg_op = 'INSERT' then
+      insert into public.lead_status_history (
+        lead_id,
+        from_status,
+        to_status,
+        changed_by,
+        change_source,
+        reason
+      )
+      values (
+        new.id,
+        null,
+        new.status,
+        v_changed_by,
+        v_change_source,
+        v_reason
+      );
+    elsif tg_op = 'UPDATE' then
+      if old.status is not distinct from new.status then
+        perform public.clear_lead_status_attribution_gucs();
+        return new;
+      end if;
 
-  -- Clear transaction-local attribution so later statements do not inherit it.
-  perform pg_catalog.set_config('lead.status_change_source', '', true);
-  perform pg_catalog.set_config('lead.status_changed_by', '', true);
-  perform pg_catalog.set_config('lead.status_change_reason', '', true);
+      insert into public.lead_status_history (
+        lead_id,
+        from_status,
+        to_status,
+        changed_by,
+        change_source,
+        reason
+      )
+      values (
+        new.id,
+        old.status,
+        new.status,
+        v_changed_by,
+        v_change_source,
+        v_reason
+      );
+    end if;
 
-  return new;
+    perform public.clear_lead_status_attribution_gucs();
+    return new;
+  exception
+    when others then
+      perform public.clear_lead_status_attribution_gucs();
+      raise;
+  end;
 end;
 $$;
 
@@ -544,10 +643,10 @@ create trigger leads_record_status_history
   execute function public.trg_record_lead_status_history();
 
 comment on function public.trg_record_lead_status_history() is
-  'Appends lead_status_history on INSERT and real status changes. Clears lead.status_* GUCs after each write.';
+  'Appends lead_status_history on INSERT and real status changes. Clears lead.status_* GUCs after consume or failure.';
 
 -- ----------------------------------------------------------------------------
--- 12. History append-only (UPDATE rejected; DELETE via CASCADE only)
+-- 15. History append-only (UPDATE rejected; DELETE via CASCADE only)
 -- ----------------------------------------------------------------------------
 create or replace function public.trg_reject_lead_status_history_update()
 returns trigger
@@ -565,7 +664,7 @@ create trigger lead_status_history_reject_update
   execute function public.trg_reject_lead_status_history_update();
 
 -- ----------------------------------------------------------------------------
--- 13. transition_lead_status() — intended application / n8n interface
+-- 16. transition_lead_status() — intended application / n8n interface
 -- ----------------------------------------------------------------------------
 create or replace function public.transition_lead_status(
   p_lead_id uuid,
@@ -581,6 +680,9 @@ set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_lead public.leads;
+  v_prev_source text;
+  v_prev_changed_by text;
+  v_prev_reason text;
 begin
   if p_lead_id is null then
     raise exception 'transition_lead_status: p_lead_id is required';
@@ -605,24 +707,44 @@ begin
     return v_lead;
   end if;
 
-  perform pg_catalog.set_config('lead.status_change_source', btrim(p_change_source), true);
-  perform pg_catalog.set_config('lead.status_changed_by', coalesce(p_changed_by::text, ''), true);
-  perform pg_catalog.set_config('lead.status_change_reason', coalesce(p_reason, ''), true);
+  v_prev_source := pg_catalog.current_setting('lead.status_change_source', true);
+  v_prev_changed_by := pg_catalog.current_setting('lead.status_changed_by', true);
+  v_prev_reason := pg_catalog.current_setting('lead.status_change_reason', true);
 
-  update public.leads
-  set status = p_to_status
-  where id = p_lead_id
-  returning * into v_lead;
+  begin
+    perform pg_catalog.set_config('lead.status_change_source', btrim(p_change_source), true);
+    perform pg_catalog.set_config('lead.status_changed_by', coalesce(p_changed_by::text, ''), true);
+    perform pg_catalog.set_config('lead.status_change_reason', coalesce(p_reason, ''), true);
 
-  return v_lead;
+    update public.leads
+    set status = p_to_status
+    where id = p_lead_id
+    returning * into v_lead;
+
+    if not found then
+      raise exception 'transition_lead_status: lead % disappeared during update', p_lead_id;
+    end if;
+
+    perform pg_catalog.set_config('lead.status_change_source', coalesce(v_prev_source, ''), true);
+    perform pg_catalog.set_config('lead.status_changed_by', coalesce(v_prev_changed_by, ''), true);
+    perform pg_catalog.set_config('lead.status_change_reason', coalesce(v_prev_reason, ''), true);
+
+    return v_lead;
+  exception
+    when others then
+      perform pg_catalog.set_config('lead.status_change_source', coalesce(v_prev_source, ''), true);
+      perform pg_catalog.set_config('lead.status_changed_by', coalesce(v_prev_changed_by, ''), true);
+      perform pg_catalog.set_config('lead.status_change_reason', coalesce(v_prev_reason, ''), true);
+      raise;
+  end;
 end;
 $$;
 
 comment on function public.transition_lead_status(uuid, public.lead_status, text, uuid, text) is
-  'Preferred status transition API. No-op when status unchanged. Outcome timestamps and history are enforced by triggers.';
+  'Preferred status transition API (service_role only). Saves and restores attribution GUCs on every exit path.';
 
 -- ----------------------------------------------------------------------------
--- 14. Row level security (closed by default) + least-privilege grants
+-- 17. Row level security (closed by default) + least-privilege grants
 -- ----------------------------------------------------------------------------
 alter table public.operator_profiles enable row level security;
 alter table public.leads enable row level security;
@@ -648,8 +770,17 @@ grant execute on function public.transition_lead_status(uuid, public.lead_status
 revoke all on function public.validate_lead_status_actor(uuid) from public;
 grant execute on function public.validate_lead_status_actor(uuid) to service_role;
 
+revoke all on function public.validate_active_operator_assignment(uuid) from public;
+grant execute on function public.validate_active_operator_assignment(uuid) to service_role;
+
+revoke all on function public.clear_lead_status_attribution_gucs() from public;
+grant execute on function public.clear_lead_status_attribution_gucs() to service_role;
+
 revoke all on function public.trg_record_lead_status_history() from public, anon, authenticated;
 revoke all on function public.trg_apply_lead_status_outcomes() from public;
+revoke all on function public.trg_reject_lead_outcome_timestamp_drift() from public;
+revoke all on function public.trg_validate_active_lead_owner() from public;
+revoke all on function public.trg_validate_active_comment_author() from public;
 revoke all on function public.trg_reject_lead_status_history_update() from public;
 revoke all on function public.set_row_updated_at() from public;
 

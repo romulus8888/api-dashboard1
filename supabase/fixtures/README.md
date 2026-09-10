@@ -23,8 +23,8 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
 
 ## Trust boundary (actor attribution)
 
-`service_role` is a trusted automation principal. PostgreSQL cannot prevent `service_role` from supplying any validated operator id. The migration enforces:
+`transition_lead_status` is executable only by `service_role` in Phase 1. PostgreSQL cannot prevent `service_role` from supplying any validated operator id. The migration enforces:
 
-- non-null `changed_by` must reference an **active** `operator_profiles` row;
-- when `auth.uid()` is present (authenticated callers), `changed_by` must equal `auth.uid()`;
-- system/SQL paths may record `NULL` for `changed_by`.
+- `NULL` `changed_by` means system automation;
+- non-null `changed_by` must reference an **active** `operator_profiles` row at write time;
+- Phase 3 server authorization will verify the authenticated user before invoking the RPC.

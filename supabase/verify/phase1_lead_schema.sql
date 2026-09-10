@@ -1,5 +1,5 @@
 -- ============================================================================
--- Phase 1 verification: lead schema + status history (corrected)
+-- Phase 1 verification: lead schema + status history
 --
 -- Rollback-safe: entire script runs inside BEGIN … ROLLBACK.
 --
@@ -7,13 +7,6 @@
 --   supabase/fixtures/disposable-test-prerequisites.sql
 --   supabase/migrations/20260814000000_create_job_processing_audit.sql
 --   supabase/migrations/20260910120000_create_lead_schema_and_status_history.sql
---
--- Usage:
---   psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
---     -f supabase/fixtures/disposable-test-prerequisites.sql \
---     -f supabase/migrations/20260814000000_create_job_processing_audit.sql \
---     -f supabase/migrations/20260910120000_create_lead_schema_and_status_history.sql \
---     -f supabase/verify/phase1_lead_schema.sql
 -- ============================================================================
 
 begin;
@@ -21,23 +14,28 @@ begin;
 do $$
 declare
   v_lead_id uuid;
+  v_owner_null_lead_id uuid;
   v_lead_b uuid;
   v_parent_id uuid;
-  v_operator_id uuid := gen_random_uuid();
-  v_other_operator_id uuid := gen_random_uuid();
+  v_primary_operator_id uuid := gen_random_uuid();
+  v_second_operator_id uuid := gen_random_uuid();
+  v_disposable_operator_id uuid := gen_random_uuid();
+  v_inactive_operator_id uuid := gen_random_uuid();
   v_history_id uuid;
   v_history_count integer;
   v_comment_count integer;
   v_audit_count integer;
+  v_owner_id uuid;
   v_lead public.leads;
   v_change_source text;
   v_caught boolean;
   v_policy_count integer;
+  v_sections_reached integer := 0;
 begin
   raise notice '=== Phase 1 lead schema verification (transaction will roll back) ===';
 
   -- --------------------------------------------------------------------------
-  -- 0. Legacy coexistence (when disposable fixture applied)
+  -- 0. Legacy coexistence
   -- --------------------------------------------------------------------------
   if to_regclass('public.jobs') is null then
     raise notice 'SKIP: public.jobs not present — apply disposable-test-prerequisites.sql for jobs assertions';
@@ -46,6 +44,7 @@ begin
   else
     raise notice 'OK: public.jobs and public.job_processing_audit coexist';
   end if;
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 1. RLS enabled, zero policies; role privileges
@@ -93,19 +92,24 @@ begin
   end if;
 
   raise notice 'OK: RLS closed and least-privilege grants';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
-  -- 2. operator_profiles + owner_id FK
+  -- 2. operator_profiles, owner_id FK, disposable ON DELETE SET NULL
   -- --------------------------------------------------------------------------
   insert into auth.users (id, email)
   values
-    (v_operator_id, 'operator@example.com'),
-    (v_other_operator_id, 'other@example.com');
+    (v_primary_operator_id, 'primary@example.com'),
+    (v_second_operator_id, 'second@example.com'),
+    (v_disposable_operator_id, 'disposable@example.com'),
+    (v_inactive_operator_id, 'inactive@example.com');
 
-  insert into public.operator_profiles (id, display_name)
+  insert into public.operator_profiles (id, display_name, is_active)
   values
-    (v_operator_id, 'Primary Operator'),
-    (v_other_operator_id, 'Other Operator');
+    (v_primary_operator_id, 'Primary Operator', true),
+    (v_second_operator_id, 'Second Operator', true),
+    (v_disposable_operator_id, 'Disposable Operator', true),
+    (v_inactive_operator_id, 'Inactive Operator', false);
 
   perform set_config('lead.status_change_source', 'seed', true);
 
@@ -121,9 +125,25 @@ begin
     'Synthetic Person',
     'demo@example.com',
     'Verification lead',
-    v_operator_id
+    v_primary_operator_id
   )
   returning id into v_lead_id;
+
+  insert into public.leads (
+    source,
+    contact_name,
+    contact_email,
+    title,
+    owner_id
+  )
+  values (
+    'demo_seed',
+    'Disposable Owner',
+    'disposable-owner@example.com',
+    'Owner null test lead',
+    v_disposable_operator_id
+  )
+  returning id into v_owner_null_lead_id;
 
   v_caught := false;
   begin
@@ -152,25 +172,78 @@ begin
     raise exception 'owner_id must reject non-operator uuid';
   end if;
 
-  update public.leads
-  set owner_id = v_other_operator_id
-  where id = v_lead_id;
-
   delete from public.operator_profiles
-  where id = v_other_operator_id;
+  where id = v_disposable_operator_id;
 
   select owner_id
-    into v_operator_id
+    into v_owner_id
+  from public.leads
+  where id = v_owner_null_lead_id;
+
+  if v_owner_id is not null then
+    raise exception 'owner_id should SET NULL when disposable operator profile is deleted';
+  end if;
+
+  raise notice 'OK: operator_profiles, owner_id FK, disposable ON DELETE SET NULL';
+  v_sections_reached := v_sections_reached + 1;
+
+  -- --------------------------------------------------------------------------
+  -- 2b. Inactive operators: new assignment rejected; existing ownership kept
+  -- --------------------------------------------------------------------------
+  v_caught := false;
+  begin
+    update public.leads
+    set owner_id = v_inactive_operator_id
+    where id = v_lead_id;
+  exception
+    when others then
+      if sqlerrm like '%not an active operator%' then
+        v_caught := true;
+      else
+        raise;
+      end if;
+  end;
+
+  if not v_caught then
+    raise exception 'inactive operator must not be newly assigned as owner';
+  end if;
+
+  v_caught := false;
+  begin
+    insert into public.lead_comments (lead_id, author_id, body)
+    values (v_lead_id, v_inactive_operator_id, 'inactive author');
+  exception
+    when others then
+      if sqlerrm like '%not an active operator%' then
+        v_caught := true;
+      else
+        raise;
+      end if;
+  end;
+
+  if not v_caught then
+    raise exception 'inactive operator must not create new comments';
+  end if;
+
+  update public.operator_profiles
+  set is_active = false
+  where id = v_primary_operator_id;
+
+  select owner_id
+    into v_owner_id
   from public.leads
   where id = v_lead_id;
 
-  if v_operator_id is not null then
-    raise exception 'owner_id should SET NULL when operator profile is deleted';
+  if v_owner_id is distinct from v_primary_operator_id then
+    raise exception 'existing ownership must remain when operator is later deactivated';
   end if;
 
-  v_operator_id := (select id from public.operator_profiles where display_name = 'Primary Operator');
+  update public.operator_profiles
+  set is_active = true
+  where id = v_primary_operator_id;
 
-  raise notice 'OK: operator_profiles and owner_id FK';
+  raise notice 'OK: inactive operator assignment rules';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 3. Initial history on INSERT
@@ -196,6 +269,7 @@ begin
   end if;
 
   raise notice 'OK: initial history on INSERT';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 4. One history row per real change; no-op RPC and UPDATE
@@ -239,6 +313,7 @@ begin
   end if;
 
   raise notice 'OK: one row per real change; no-op RPC/UPDATE skip history';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 5. Direct UPDATE writes history and keeps timestamps consistent
@@ -272,6 +347,7 @@ begin
   end if;
 
   raise notice 'OK: direct UPDATE history and timestamp consistency';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 6. Won / reopen via RPC and direct UPDATE
@@ -317,15 +393,55 @@ begin
   v_lead := public.transition_lead_status(v_lead_id, 'lost', 'rpc', null, 'lost after reopen');
 
   if v_lead.lost_at is null or v_lead.won_at is not null then
-    raise exception 'won to lost via RPC should set lost_at and clear won_at';
+    raise exception 'reopen to lost via RPC should set lost_at and clear won_at';
   end if;
 
   raise notice 'OK: won/lost/reopen via RPC and direct UPDATE';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
-  -- 7. GUC attribution must not leak across statements
+  -- 6b. Outcome timestamp drift without status transition is rejected
   -- --------------------------------------------------------------------------
+  v_caught := false;
+  begin
+    update public.leads
+    set lost_at = null
+    where id = v_lead_id;
+  exception
+    when others then
+      if sqlerrm like '%outcome timestamps may only change alongside a status transition%' then
+        v_caught := true;
+      else
+        raise;
+      end if;
+  end;
+
+  if not v_caught then
+    raise exception 'clearing lost_at while status stays lost must fail';
+  end if;
+
+  update public.leads
+  set status = 'lost'
+  where id = v_lead_id
+  returning * into v_lead;
+
+  if v_lead.status <> 'lost' or v_lead.lost_at is null then
+    raise exception 'same-value lost status update must retain lost_at';
+  end if;
+
+  raise notice 'OK: outcome timestamp drift rejected';
+  v_sections_reached := v_sections_reached + 1;
+
+  -- --------------------------------------------------------------------------
+  -- 7. GUC attribution lifecycle
+  -- --------------------------------------------------------------------------
+  perform set_config('lead.status_change_source', 'prior-context', true);
+
   perform public.transition_lead_status(v_lead_id, 'needs_review', 'rpc', null, 'attribution test');
+
+  if pg_catalog.current_setting('lead.status_change_source', true) <> 'prior-context' then
+    raise exception 'RPC must restore prior attribution GUC after success';
+  end if;
 
   insert into public.leads (
     source, contact_name, contact_email, title
@@ -342,19 +458,59 @@ begin
     and from_status is null;
 
   if v_change_source <> 'sql' then
-    raise exception 'GUC leak: second INSERT inherited change_source %', v_change_source;
+    raise exception 'post-transition INSERT inherited change_source %', v_change_source;
   end if;
 
-  raise notice 'OK: GUC attribution cleared after transition';
+  perform set_config('lead.status_changed_by', gen_random_uuid()::text, true);
+  perform set_config('lead.status_change_source', 'rpc', true);
+
+  v_caught := false;
+  begin
+    update public.leads
+    set status = 'archived'
+    where id = v_lead_id;
+  exception
+    when others then
+      if sqlerrm like '%not an active operator%' then
+        v_caught := true;
+      else
+        raise;
+      end if;
+  end;
+
+  if not v_caught then
+    raise exception 'failed status write with invalid actor GUC must error';
+  end if;
+
+  insert into public.leads (
+    source, contact_name, contact_email, title
+  )
+  values (
+    'demo_seed', 'AfterFail', 'afterfail@example.com', 'GUC after failed write'
+  )
+  returning id into v_lead_b;
+
+  select change_source
+    into v_change_source
+  from public.lead_status_history
+  where lead_id = v_lead_b
+    and from_status is null;
+
+  if v_change_source <> 'sql' then
+    raise exception 'failed write must not leak attribution; got change_source %', v_change_source;
+  end if;
+
+  raise notice 'OK: GUC attribution lifecycle';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
-  -- 8. Actor attribution validation
+  -- 8. Actor attribution (service_role trust boundary)
   -- --------------------------------------------------------------------------
   v_caught := false;
   begin
     perform public.transition_lead_status(
       v_lead_id,
-      'archived',
+      'qualified',
       'rpc',
       gen_random_uuid(),
       'forged operator'
@@ -372,56 +528,33 @@ begin
     raise exception 'non-operator p_changed_by must be rejected';
   end if;
 
-  perform set_config('request.jwt.claim.role', 'authenticated', true);
-  perform set_config('request.jwt.claim.sub', v_operator_id::text, true);
-
-  v_caught := false;
-  begin
-    perform public.transition_lead_status(
-      v_lead_id,
-      'archived',
-      'rpc',
-      v_other_operator_id,
-      'forged peer'
-    );
-  exception
-    when others then
-      if sqlerrm like '%cannot attribute change to another operator%' then
-        v_caught := true;
-      else
-        raise;
-      end if;
-  end;
-
-  if not v_caught then
-    raise exception 'authenticated caller must not forge another operator id';
-  end if;
-
-  perform set_config('request.jwt.claim.role', 'service_role', true);
-  perform set_config('request.jwt.claim.sub', '', true);
-
   v_lead := public.transition_lead_status(
     v_lead_id,
-    'archived',
+    'qualified',
     'rpc',
-    v_operator_id,
-    'trusted service attribution'
+    v_second_operator_id,
+    'trusted service attribution to second operator'
   );
 
   if not exists (
     select 1
     from public.lead_status_history
     where lead_id = v_lead_id
-      and to_status = 'archived'
-      and changed_by = v_operator_id
+      and to_status = 'qualified'
+      and changed_by = v_second_operator_id
   ) then
-    raise exception 'service_role should record validated operator changed_by';
+    raise exception 'service_role should record validated second-operator changed_by';
   end if;
 
-  perform set_config('request.jwt.claim.role', '', true);
-  perform set_config('request.jwt.claim.sub', '', true);
+  if not has_function_privilege('anon', 'public.transition_lead_status(uuid, public.lead_status, text, uuid, text)', 'EXECUTE')
+     and not has_function_privilege('authenticated', 'public.transition_lead_status(uuid, public.lead_status, text, uuid, text)', 'EXECUTE') then
+    null;
+  else
+    raise exception 'anon/authenticated must not have EXECUTE on transition_lead_status';
+  end if;
 
-  raise notice 'OK: actor attribution validation';
+  raise notice 'OK: actor attribution trust boundary';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 9. Unique (source, external_event_id) scoped per channel
@@ -458,6 +591,7 @@ begin
   end if;
 
   raise notice 'OK: external event uniqueness is per lead_source';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 10. Invalid enum / check constraints
@@ -502,6 +636,7 @@ begin
   end if;
 
   raise notice 'OK: invalid enum/check constraints rejected';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 11. FK violations and CASCADE delete
@@ -554,7 +689,7 @@ begin
   returning id into v_lead_id;
 
   insert into public.lead_comments (lead_id, author_id, body)
-  values (v_lead_id, v_operator_id, 'Cascade test comment');
+  values (v_lead_id, v_primary_operator_id, 'Cascade test comment');
 
   insert into public.lead_processing_audit (
     lead_id, event_type, step, outcome, idempotency_key
@@ -590,6 +725,7 @@ begin
   end if;
 
   raise notice 'OK: FK behavior and cascade delete';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 12. History append-only (UPDATE rejected; DELETE denied to service_role)
@@ -653,6 +789,7 @@ begin
   end if;
 
   raise notice 'OK: history append-only and cascade delete';
+  v_sections_reached := v_sections_reached + 1;
 
   -- --------------------------------------------------------------------------
   -- 13. transition_lead_status on missing lead
@@ -680,6 +817,12 @@ begin
   end if;
 
   raise notice 'OK: transition_lead_status rejects missing lead';
+  v_sections_reached := v_sections_reached + 1;
+
+  if v_sections_reached <> 16 then
+    raise exception 'verification incomplete: reached % of 16 sections', v_sections_reached;
+  end if;
+
   raise notice '=== All Phase 1 checks passed (rolling back) ===';
 end;
 $$;
