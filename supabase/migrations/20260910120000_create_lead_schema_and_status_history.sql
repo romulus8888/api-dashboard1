@@ -280,7 +280,7 @@ create table public.lead_comments (
 );
 
 comment on column public.lead_comments.author_id is
-  'Comment author must be an active operator at insert time. Historical comments remain when an operator is later deactivated.';
+  'Comment author must be an active operator at insert time. author_id is immutable after insert. Historical comments remain when an operator is later deactivated.';
 
 create index lead_comments_lead_id_created_at_idx
   on public.lead_comments (lead_id, created_at desc);
@@ -505,8 +505,30 @@ create trigger lead_comments_validate_active_author
   for each row
   execute function public.trg_validate_active_comment_author();
 
+create or replace function public.trg_reject_lead_comment_author_change()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, pg_temp
+as $$
+begin
+  if old.author_id is distinct from new.author_id then
+    raise exception 'lead_comments.author_id is immutable';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger lead_comments_reject_author_change
+  before update on public.lead_comments
+  for each row
+  execute function public.trg_reject_lead_comment_author_change();
+
 comment on function public.validate_active_operator_assignment(uuid) is
   'Requires an active operator_profiles row for new owner assignments and new comments.';
+
+comment on function public.trg_reject_lead_comment_author_change() is
+  'Prevents reassignment of historical comment authorship; body updates remain allowed.';
 
 -- ----------------------------------------------------------------------------
 -- 12. Actor validation for status history (shared by RPC and history trigger)
@@ -781,6 +803,7 @@ revoke all on function public.trg_apply_lead_status_outcomes() from public;
 revoke all on function public.trg_reject_lead_outcome_timestamp_drift() from public;
 revoke all on function public.trg_validate_active_lead_owner() from public;
 revoke all on function public.trg_validate_active_comment_author() from public;
+revoke all on function public.trg_reject_lead_comment_author_change() from public;
 revoke all on function public.trg_reject_lead_status_history_update() from public;
 revoke all on function public.set_row_updated_at() from public;
 

@@ -447,7 +447,27 @@ begin
     source, contact_name, contact_email, title
   )
   values (
-    'demo_seed', 'Leak', 'leak@example.com', 'GUC leak test'
+    'demo_seed', 'Restore', 'restore@example.com', 'GUC restore visibility test'
+  )
+  returning id into v_lead_b;
+
+  select change_source
+    into v_change_source
+  from public.lead_status_history
+  where lead_id = v_lead_b
+    and from_status is null;
+
+  if v_change_source <> 'prior-context' then
+    raise exception 'restored prior context must be visible to later statements, got %', v_change_source;
+  end if;
+
+  perform public.clear_lead_status_attribution_gucs();
+
+  insert into public.leads (
+    source, contact_name, contact_email, title
+  )
+  values (
+    'demo_seed', 'Default', 'default@example.com', 'GUC default sql test'
   )
   returning id into v_lead_b;
 
@@ -458,7 +478,7 @@ begin
     and from_status is null;
 
   if v_change_source <> 'sql' then
-    raise exception 'post-transition INSERT inherited change_source %', v_change_source;
+    raise exception 'cleared context must default to sql, got %', v_change_source;
   end if;
 
   perform set_config('lead.status_changed_by', gen_random_uuid()::text, true);
@@ -690,6 +710,24 @@ begin
 
   insert into public.lead_comments (lead_id, author_id, body)
   values (v_lead_id, v_primary_operator_id, 'Cascade test comment');
+
+  v_caught := false;
+  begin
+    update public.lead_comments
+    set author_id = v_second_operator_id
+    where lead_id = v_lead_id;
+  exception
+    when others then
+      if sqlerrm like '%author_id is immutable%' then
+        v_caught := true;
+      else
+        raise;
+      end if;
+  end;
+
+  if not v_caught then
+    raise exception 'lead_comments.author_id must be immutable after insert';
+  end if;
 
   insert into public.lead_processing_audit (
     lead_id, event_type, step, outcome, idempotency_key
