@@ -78,6 +78,7 @@ type DemoRateLimitBucket = { [K in keyof DemoRateLimitBucketRow]: DemoRateLimitB
 
 export interface DemoRateLimitResult {
   allowed: boolean;
+  remaining: number;
   retry_after_seconds: number;
 }
 

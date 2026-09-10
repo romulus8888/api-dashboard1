@@ -37,7 +37,7 @@ function buildRequest(body: unknown, headers?: HeadersInit): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-forwarded-for": "203.0.113.10",
+      "x-vercel-forwarded-for": "203.0.113.10",
       ...headers,
     },
     body: JSON.stringify(body),
@@ -75,6 +75,7 @@ function createSupabaseMock(options?: {
     rpc: vi.fn().mockResolvedValue({
       data: {
         allowed: rateLimitAllowed,
+        remaining: rateLimitAllowed ? 9 : 0,
         retry_after_seconds: retryAfterSeconds,
       },
       error: null,
@@ -194,6 +195,32 @@ describe("handleGenerateDemoLead", () => {
     );
 
     expect(response.status).toBe(503);
+  });
+
+  it("rate limits unknown clients when the trusted Vercel header is absent", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    const response = await handleGenerateDemoLead(
+      buildRequest(
+        {
+          locale: "en",
+          turnstileToken: "valid-token",
+        },
+        {
+          "x-forwarded-for": "198.51.100.99",
+        },
+      ),
+    );
+
+    expect(response.status).toBe(201);
+    expect(createServerSupabaseClientMock).toHaveBeenCalled();
+    const supabase = createServerSupabaseClientMock.mock.results.at(-1)?.value;
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "check_demo_rate_limit",
+      expect.objectContaining({
+        p_bucket_key: expect.not.stringContaining("198.51.100.99"),
+      }),
+    );
   });
 
   it("fails closed in production when turnstile secret is missing", async () => {

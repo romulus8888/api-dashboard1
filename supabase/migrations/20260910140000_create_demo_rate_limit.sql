@@ -37,9 +37,10 @@ set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_now timestamptz := pg_catalog.now();
-  v_window_start timestamptz;
-  v_count integer;
+  v_row public.demo_rate_limit_buckets;
+  v_window_end timestamptz;
   v_retry_after integer;
+  v_remaining integer;
 begin
   if p_bucket_key is null or length(btrim(p_bucket_key)) = 0 then
     raise exception 'check_demo_rate_limit: p_bucket_key is required';
@@ -56,77 +57,64 @@ begin
   delete from public.demo_rate_limit_buckets
   where expires_at < v_now;
 
-  select b.window_start, b.request_count
-    into v_window_start, v_count
-  from public.demo_rate_limit_buckets b
-  where b.bucket_key = p_bucket_key
-  for update;
+  insert into public.demo_rate_limit_buckets as existing (
+    bucket_key,
+    window_start,
+    request_count,
+    expires_at
+  )
+  values (
+    p_bucket_key,
+    v_now,
+    1,
+    v_now + make_interval(secs => p_window_seconds * 2)
+  )
+  on conflict (bucket_key) do update
+  set
+    window_start = case
+      when existing.window_start + make_interval(secs => p_window_seconds) <= excluded.window_start
+        then excluded.window_start
+      else existing.window_start
+    end,
+    request_count = case
+      when existing.window_start + make_interval(secs => p_window_seconds) <= excluded.window_start
+        then 1
+      else existing.request_count + 1
+    end,
+    expires_at = case
+      when existing.window_start + make_interval(secs => p_window_seconds) <= excluded.window_start
+        then excluded.expires_at
+      else existing.expires_at
+    end
+  returning * into v_row;
 
-  if not found then
-    insert into public.demo_rate_limit_buckets (
-      bucket_key,
-      window_start,
-      request_count,
-      expires_at
-    )
-    values (
-      p_bucket_key,
-      v_now,
-      1,
-      v_now + make_interval(secs => p_window_seconds * 2)
-    );
+  v_window_end := v_row.window_start + make_interval(secs => p_window_seconds);
 
-    return jsonb_build_object(
-      'allowed', true,
-      'retry_after_seconds', 0
-    );
-  end if;
-
-  if v_window_start + make_interval(secs => p_window_seconds) <= v_now then
-    update public.demo_rate_limit_buckets
-    set
-      window_start = v_now,
-      request_count = 1,
-      expires_at = v_now + make_interval(secs => p_window_seconds * 2)
-    where bucket_key = p_bucket_key;
-
-    return jsonb_build_object(
-      'allowed', true,
-      'retry_after_seconds', 0
-    );
-  end if;
-
-  if v_count >= p_max_requests then
+  if v_row.request_count > p_max_requests then
     v_retry_after := greatest(
       1,
-      ceil(
-        extract(
-          epoch from (
-            v_window_start + make_interval(secs => p_window_seconds) - v_now
-          )
-        )
-      )::integer
+      ceil(extract(epoch from (v_window_end - v_now)))::integer
     );
 
     return jsonb_build_object(
       'allowed', false,
+      'remaining', 0,
       'retry_after_seconds', v_retry_after
     );
   end if;
 
-  update public.demo_rate_limit_buckets
-  set request_count = request_count + 1
-  where bucket_key = p_bucket_key;
+  v_remaining := p_max_requests - v_row.request_count;
 
   return jsonb_build_object(
     'allowed', true,
+    'remaining', v_remaining,
     'retry_after_seconds', 0
   );
 end;
 $$;
 
 comment on function public.check_demo_rate_limit(text, integer, integer) is
-  'Atomically enforces a fixed-window request count for a hashed client bucket.';
+  'Atomically enforces a fixed-window request count via INSERT ... ON CONFLICT DO UPDATE.';
 
 alter table public.demo_rate_limit_buckets enable row level security;
 

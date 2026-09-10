@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { ZodError } from "zod";
 
-import { getClientIp } from "@/lib/demo/client-ip";
+import { getTrustedClientIp } from "@/lib/demo/client-ip";
 import {
   generateLeadRequestSchema,
   MAX_GENERATE_LEAD_BODY_BYTES,
@@ -79,7 +79,7 @@ export async function handleGenerateDemoLead(request: Request): Promise<Response
 
     const rateLimitConfig = getRateLimitConfig();
     const supabase = createServerSupabaseClient();
-    const clientIp = getClientIp(request);
+    const clientIp = getTrustedClientIp(request);
     const bucketKey = hashClientIdentifier(clientIp, rateLimitConfig.secret);
     const rateLimit = await checkDemoRateLimit(supabase, bucketKey, rateLimitConfig);
 

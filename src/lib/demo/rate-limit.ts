@@ -12,6 +12,7 @@ export interface RateLimitConfig {
 
 export interface RateLimitResult {
   allowed: boolean;
+  remaining: number;
   retryAfterSeconds: number;
 }
 
@@ -69,6 +70,7 @@ export async function checkDemoRateLimit(
 
   return {
     allowed: Boolean(data?.allowed),
+    remaining: data?.remaining ?? 0,
     retryAfterSeconds: data?.retry_after_seconds ?? 0,
   };
 }
