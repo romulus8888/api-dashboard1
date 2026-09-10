@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, Loader2, Send } from "lucide-react";
 
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import { useLocaleContext } from "@/i18n/locale-provider";
 import {
   jobRequestSchema,
   type JobRequestInput,
@@ -43,8 +44,16 @@ function inputClasses(invalid: boolean, extra?: string): string {
 }
 
 export default function JobForm() {
+  const { dictionary } = useLocaleContext();
+  const a11y = dictionary.accessibility;
+
   return (
-    <ToastProvider>
+    <ToastProvider
+      labels={{
+        regionLabel: a11y.notifications,
+        dismissLabel: a11y.dismissNotification,
+      }}
+    >
       <JobRequestForm />
     </ToastProvider>
   );

@@ -24,6 +24,11 @@ interface ToastRecord {
   variant: ToastVariant;
 }
 
+export interface ToastA11yLabels {
+  regionLabel: string;
+  dismissLabel: string;
+}
+
 interface ToastContextValue {
   toast: (options: ToastOptions) => void;
   dismiss: (id: string) => void;
@@ -51,7 +56,13 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 let toastCounter = 0;
 
-export function ToastProvider({ children }: { children: React.ReactNode }) {
+export function ToastProvider({
+  children,
+  labels,
+}: {
+  children: React.ReactNode;
+  labels: ToastA11yLabels;
+}) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const hydrated = useHydrated();
   const timers = useRef(new Map<string, number>());
@@ -98,11 +109,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {hydrated
         ? createPortal(
             <div
-              aria-label="Notifications"
+              aria-label={labels.regionLabel}
               className="pointer-events-none fixed inset-x-4 bottom-4 z-[60] flex flex-col items-end gap-3 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-96"
             >
               {toasts.map((item) => (
-                <ToastCard key={item.id} toast={item} onDismiss={dismiss} />
+                <ToastCard
+                  key={item.id}
+                  toast={item}
+                  dismissLabel={labels.dismissLabel}
+                  onDismiss={dismiss}
+                />
               ))}
             </div>,
             document.body,
@@ -122,9 +138,11 @@ export function useToast(): ToastContextValue {
 
 function ToastCard({
   toast,
+  dismissLabel,
   onDismiss,
 }: {
   toast: ToastRecord;
+  dismissLabel: string;
   onDismiss: (id: string) => void;
 }) {
   const { icon: Icon, accent, border } = VARIANT_STYLES[toast.variant];
@@ -150,7 +168,7 @@ function ToastCard({
       <button
         type="button"
         onClick={() => onDismiss(toast.id)}
-        aria-label="Dismiss notification"
+        aria-label={dismissLabel}
         className="-mr-1 shrink-0 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
       >
         <X className="size-4" aria-hidden="true" />

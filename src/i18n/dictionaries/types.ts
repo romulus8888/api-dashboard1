@@ -139,4 +139,10 @@ export interface Dictionary {
   errors: {
     api: Record<DemoApiErrorCode, string>;
   };
+  accessibility: {
+    loadingJobRequests: string;
+    closePanel: string;
+    notifications: string;
+    dismissNotification: string;
+  };
 }

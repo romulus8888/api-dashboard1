@@ -174,4 +174,10 @@ export const ru: Dictionary = {
       verification_required: "Пройдите проверку перед созданием демо-лида.",
     },
   },
+  accessibility: {
+    loadingJobRequests: "Загрузка заявок…",
+    closePanel: "Закрыть панель",
+    notifications: "Уведомления",
+    dismissNotification: "Закрыть уведомление",
+  },
 };

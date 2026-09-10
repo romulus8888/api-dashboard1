@@ -23,8 +23,16 @@ interface GenerateLeadErrorResponse {
 }
 
 export default function DemoLeadGenerator() {
+  const { dictionary } = useLocaleContext();
+  const a11y = dictionary.accessibility;
+
   return (
-    <ToastProvider>
+    <ToastProvider
+      labels={{
+        regionLabel: a11y.notifications,
+        dismissLabel: a11y.dismissNotification,
+      }}
+    >
       <DemoLeadGeneratorForm />
     </ToastProvider>
   );

@@ -21,14 +21,22 @@ import {
 import type { Job, JobStatus } from "@/types/job";
 
 export default function JobsDashboard() {
+  const { dictionary } = useLocaleContext();
+  const a11y = dictionary.accessibility;
+
   return (
-    <ToastProvider>
-      <JobsDashboardContent />
+    <ToastProvider
+      labels={{
+        regionLabel: a11y.notifications,
+        dismissLabel: a11y.dismissNotification,
+      }}
+    >
+      <JobsDashboardContent loadingLabel={a11y.loadingJobRequests} />
     </ToastProvider>
   );
 }
 
-function JobsDashboardContent() {
+function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
   const { dictionary } = useLocaleContext();
   const { jobs, loading, refreshing, loadError, updatingJobId, reload, refresh, updateStatus } =
     useJobs();
@@ -106,7 +114,7 @@ function JobsDashboardContent() {
         {resolvedLoadError ? (
           <JobsErrorState message={resolvedLoadError} onRetry={reload} />
         ) : loading ? (
-          <JobsTableSkeleton />
+          <JobsTableSkeleton loadingLabel={loadingLabel} />
         ) : visibleJobs.length === 0 ? (
           <JobsEmptyState filtered={hasActiveFilters(filters)} onClearFilters={resetFilters} />
         ) : (

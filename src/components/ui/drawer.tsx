@@ -20,12 +20,21 @@ export interface DrawerProps {
   onClose: () => void;
   title: string;
   description?: string;
+  closePanelLabel: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
 }
 
 /** Slide-over dialog: portalled to the body, focus-trapped, and dismissible via Escape or the backdrop. */
-export function Drawer({ open, onClose, title, description, children, footer }: DrawerProps) {
+export function Drawer({
+  open,
+  onClose,
+  title,
+  description,
+  closePanelLabel,
+  children,
+  footer,
+}: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const hydrated = useHydrated();
   const titleId = useId();
@@ -118,7 +127,7 @@ export function Drawer({ open, onClose, title, description, children, footer }: 
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close panel"
+            aria-label={closePanelLabel}
             className="-mr-1 shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
             <X className="size-5" aria-hidden="true" />

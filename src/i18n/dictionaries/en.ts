@@ -172,4 +172,10 @@ export const en: Dictionary = {
       verification_required: "Complete the verification challenge before generating a demo lead.",
     },
   },
+  accessibility: {
+    loadingJobRequests: "Loading job requests…",
+    closePanel: "Close panel",
+    notifications: "Notifications",
+    dismissNotification: "Dismiss notification",
+  },
 };

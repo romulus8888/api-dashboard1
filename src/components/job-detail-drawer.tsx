@@ -38,6 +38,7 @@ export function JobDetailDrawer({
       open
       onClose={onClose}
       title={job.title}
+      closePanelLabel={dictionary.accessibility.closePanel}
       description={labels.submittedBy.replace("{email}", job.client_email)}
       footer={
         <div className="flex items-center justify-end gap-3">

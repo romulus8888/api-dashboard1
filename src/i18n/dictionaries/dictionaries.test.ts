@@ -58,6 +58,24 @@ describe("dictionaries", () => {
     }
   });
 
+  it("localizes accessibility labels for EN and RU", () => {
+    const en = getDictionary("en");
+    const ru = getDictionary("ru");
+
+    expect(en.accessibility.loadingJobRequests).toBe("Loading job requests…");
+    expect(en.accessibility.closePanel).toBe("Close panel");
+    expect(en.accessibility.notifications).toBe("Notifications");
+    expect(en.accessibility.dismissNotification).toBe("Dismiss notification");
+
+    expect(ru.accessibility.loadingJobRequests).toBe("Загрузка заявок…");
+    expect(ru.accessibility.closePanel).toBe("Закрыть панель");
+    expect(ru.accessibility.notifications).toBe("Уведомления");
+    expect(ru.accessibility.dismissNotification).toBe("Закрыть уведомление");
+
+    expect(ru.accessibility.loadingJobRequests).toMatch(/[А-Яа-яЁё]/);
+    expect(ru.accessibility.notifications).not.toBe(en.accessibility.notifications);
+  });
+
   it("maps language-neutral API error codes to localized messages", () => {
     const en = getDictionary("en");
     const ru = getDictionary("ru");

@@ -2,10 +2,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const ROW_COUNT = 6;
 
-export function JobsTableSkeleton() {
+export interface JobsTableSkeletonProps {
+  loadingLabel: string;
+}
+
+export function JobsTableSkeleton({ loadingLabel }: JobsTableSkeletonProps) {
   return (
     <div className="divide-y divide-slate-100" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Loading job requests…</span>
+      <span className="sr-only">{loadingLabel}</span>
       {Array.from({ length: ROW_COUNT }).map((_, index) => (
         <div key={index} className="flex items-center gap-4 px-4 py-4">
           <div className="flex-1 space-y-2">
