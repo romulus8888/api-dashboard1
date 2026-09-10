@@ -23,6 +23,7 @@ export interface UseLeadsResult {
   refreshing: boolean;
   loadError: LeadsLoadErrorCode | null;
   updatingLeadId: string | null;
+  clearLoadedLeads: () => void;
   reload: () => void;
   refresh: () => Promise<void>;
   updateStatus: (lead: AdminLeadListItem, status: LeadStatus) => Promise<void>;
@@ -34,19 +35,6 @@ function toLoadErrorCode(error: unknown): LeadsLoadErrorCode {
   }
 
   return "load_failed";
-}
-
-function handleSessionExpiry(
-  onSessionExpired: (() => void) | undefined,
-  clearState: () => void,
-): boolean {
-  if (!onSessionExpired) {
-    return false;
-  }
-
-  clearState();
-  onSessionExpired();
-  return true;
 }
 
 export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsResult {
@@ -77,8 +65,8 @@ export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsRe
   }, []);
 
   const notifySessionExpired = useCallback(() => {
-    handleSessionExpiry(onSessionExpiredRef.current, clearLoadedLeads);
-  }, [clearLoadedLeads]);
+    onSessionExpiredRef.current?.();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,7 +141,6 @@ export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsRe
 
         if (isMounted.current && isAdminSessionExpired(error)) {
           notifySessionExpired();
-          return;
         }
 
         throw error;
@@ -170,6 +157,7 @@ export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsRe
     refreshing,
     loadError,
     updatingLeadId,
+    clearLoadedLeads,
     reload,
     refresh,
     updateStatus,

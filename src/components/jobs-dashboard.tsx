@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { JobDetailDrawer } from "@/components/job-detail-drawer";
 import { JobsEmptyState } from "@/components/jobs-empty-state";
@@ -10,10 +10,11 @@ import { JobsStats } from "@/components/jobs-stats";
 import { JobsTable } from "@/components/jobs-table";
 import { JobsTableSkeleton } from "@/components/jobs-table-skeleton";
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import { useAdminSessionExpiry } from "@/hooks/use-admin-session-expiry";
 import { useLeads } from "@/hooks/use-leads";
-import { useSessionExpiredRedirect } from "@/hooks/use-session-expired-redirect";
 import { useLocaleContext } from "@/i18n/locale-provider";
 import type { AdminLeadListItem } from "@/lib/admin/admin-leads-client";
+import { isAdminSessionExpired } from "@/lib/auth/admin-session-expiry";
 import {
   DEFAULT_LEAD_FILTERS,
   filterLeads,
@@ -38,19 +39,24 @@ export default function JobsDashboard() {
   );
 }
 
-function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
+export function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
   const { dictionary } = useLocaleContext();
-  const redirectToLogin = useSessionExpiredRedirect();
   const [filters, setFilters] = useState<LeadFilters>(DEFAULT_LEAD_FILTERS);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const clearLoadedLeadsRef = useRef<() => void>(() => {});
 
-  const handleSessionExpired = useCallback(() => {
-    setSelectedLeadId(null);
-    redirectToLogin();
-  }, [redirectToLogin]);
+  const handleSessionExpired = useAdminSessionExpiry({
+    clearLoadedLeads: () => clearLoadedLeadsRef.current(),
+    clearSelectedLead: () => setSelectedLeadId(null),
+  });
 
-  const { leads, loading, refreshing, loadError, updatingLeadId, reload, refresh, updateStatus } =
+  const { leads, loading, refreshing, loadError, updatingLeadId, clearLoadedLeads, reload, refresh, updateStatus } =
     useLeads({ onSessionExpired: handleSessionExpired });
+
+  useEffect(() => {
+    clearLoadedLeadsRef.current = clearLoadedLeads;
+  }, [clearLoadedLeads]);
+
   const { toast } = useToast();
 
   const visibleLeads = useMemo(() => filterLeads(leads, filters), [leads, filters]);
@@ -71,7 +77,11 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
   const handleRefresh = useCallback(async () => {
     try {
       await refresh();
-    } catch {
+    } catch (error) {
+      if (isAdminSessionExpired(error)) {
+        return;
+      }
+
       toast({
         variant: "error",
         title: dictionary.leads.toasts.refreshFailedTitle,
@@ -93,7 +103,11 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
             .replace("{title}", lead.title)
             .replace("{status}", dictionary.leads.status[status]),
         });
-      } catch {
+      } catch (error) {
+        if (isAdminSessionExpired(error)) {
+          return;
+        }
+
         toast({
           variant: "error",
           title: dictionary.leads.toasts.statusUpdateFailedTitle,

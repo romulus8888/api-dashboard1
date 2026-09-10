@@ -47,8 +47,6 @@ describe("useLeads", () => {
       expect(result.current.loading).toBe(false);
     });
 
-    expect(result.current.leads).toEqual([]);
-    expect(result.current.loadError).toBeNull();
     expect(onSessionExpired).toHaveBeenCalledTimes(1);
   });
 
@@ -66,16 +64,13 @@ describe("useLeads", () => {
 
     await result.current.refresh();
 
-    await waitFor(() => {
-      expect(result.current.leads).toEqual([]);
-    });
-    expect(result.current.loadError).toBeNull();
     expect(onSessionExpired).toHaveBeenCalledTimes(1);
   });
 
-  it("rolls back optimistic status updates before handling session expiry", async () => {
+  it("rolls back, notifies, and rejects when a session-expired status update fails", async () => {
+    const sessionError = new AdminLeadsApiError("session_expired", 401);
     vi.mocked(fetchAdminLeads).mockResolvedValue([lead]);
-    vi.mocked(updateAdminLeadStatus).mockRejectedValue(new AdminLeadsApiError("session_expired", 401));
+    vi.mocked(updateAdminLeadStatus).mockRejectedValue(sessionError);
 
     const onSessionExpired = vi.fn();
     const { result } = renderHook(() => useLeads({ onSessionExpired }));
@@ -84,11 +79,35 @@ describe("useLeads", () => {
       expect(result.current.loading).toBe(false);
     });
 
-    await result.current.updateStatus(lead, "contacted" as LeadStatus);
+    await expect(
+      result.current.updateStatus(lead, "contacted" as LeadStatus),
+    ).rejects.toBe(sessionError);
 
     await waitFor(() => {
-      expect(result.current.leads).toEqual([]);
+      expect(result.current.leads[0]?.status).toBe("new");
     });
     expect(onSessionExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back and rejects when a non-session status update fails", async () => {
+    const requestError = new AdminLeadsApiError("request_failed", 500);
+    vi.mocked(fetchAdminLeads).mockResolvedValue([lead]);
+    vi.mocked(updateAdminLeadStatus).mockRejectedValue(requestError);
+
+    const onSessionExpired = vi.fn();
+    const { result } = renderHook(() => useLeads({ onSessionExpired }));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await expect(
+      result.current.updateStatus(lead, "contacted" as LeadStatus),
+    ).rejects.toBe(requestError);
+
+    await waitFor(() => {
+      expect(result.current.leads[0]?.status).toBe("new");
+    });
+    expect(onSessionExpired).not.toHaveBeenCalled();
   });
 });
