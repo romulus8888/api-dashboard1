@@ -1,31 +1,14 @@
 import { RefreshCw, Search, X } from "lucide-react";
 
 import { Select, type SelectOption } from "@/components/ui/select";
+import { useLocaleContext } from "@/i18n/locale-provider";
 import {
   hasActiveFilters,
   type JobFilters,
   type PriorityFilter,
   type StatusFilter,
 } from "@/lib/job-filters";
-import {
-  JOB_PRIORITIES,
-  JOB_PRIORITY_LABELS,
-  JOB_STATUSES,
-  JOB_STATUS_LABELS,
-} from "@/types/job";
-
-const STATUS_FILTER_OPTIONS: SelectOption<StatusFilter>[] = [
-  { value: "all", label: "All statuses" },
-  ...JOB_STATUSES.map((status) => ({ value: status, label: JOB_STATUS_LABELS[status] })),
-];
-
-const PRIORITY_FILTER_OPTIONS: SelectOption<PriorityFilter>[] = [
-  { value: "all", label: "All priorities" },
-  ...JOB_PRIORITIES.map((priority) => ({
-    value: priority,
-    label: JOB_PRIORITY_LABELS[priority],
-  })),
-];
+import { JOB_PRIORITIES, JOB_STATUSES } from "@/types/job";
 
 export interface JobsFiltersProps {
   filters: JobFilters;
@@ -44,6 +27,25 @@ export function JobsFilters({
   refreshDisabled,
   refreshing,
 }: JobsFiltersProps) {
+  const { dictionary } = useLocaleContext();
+  const labels = dictionary.jobs.filters;
+
+  const statusFilterOptions: SelectOption<StatusFilter>[] = [
+    { value: "all", label: labels.allStatuses },
+    ...JOB_STATUSES.map((status) => ({
+      value: status,
+      label: dictionary.jobs.status[status],
+    })),
+  ];
+
+  const priorityFilterOptions: SelectOption<PriorityFilter>[] = [
+    { value: "all", label: labels.allPriorities },
+    ...JOB_PRIORITIES.map((priority) => ({
+      value: priority,
+      label: dictionary.jobs.priority[priority],
+    })),
+  ];
+
   const isFiltered = hasActiveFilters(filters);
 
   return (
@@ -57,15 +59,15 @@ export function JobsFilters({
           type="search"
           value={filters.search}
           onChange={(event) => onChange({ ...filters, search: event.target.value })}
-          placeholder="Search by job title or client email…"
-          aria-label="Search jobs by title or client email"
+          placeholder={labels.searchPlaceholder}
+          aria-label={labels.searchLabel}
           className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pr-9 pl-9 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
         />
         {filters.search ? (
           <button
             type="button"
             onClick={() => onChange({ ...filters, search: "" })}
-            aria-label="Clear search"
+            aria-label={labels.clearSearch}
             className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
           >
             <X className="size-3.5" aria-hidden="true" />
@@ -76,20 +78,20 @@ export function JobsFilters({
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <Select
           id="status-filter"
-          label="Filter by status"
+          label={labels.statusFilter}
           hideLabel
           value={filters.status}
-          options={STATUS_FILTER_OPTIONS}
+          options={statusFilterOptions}
           onChange={(status) => onChange({ ...filters, status })}
           className="min-w-[9.5rem] flex-1 sm:flex-none"
         />
 
         <Select
           id="priority-filter"
-          label="Filter by priority"
+          label={labels.priorityFilter}
           hideLabel
           value={filters.priority}
-          options={PRIORITY_FILTER_OPTIONS}
+          options={priorityFilterOptions}
           onChange={(priority) => onChange({ ...filters, priority })}
           className="min-w-[9.5rem] flex-1 sm:flex-none"
         />
@@ -100,7 +102,7 @@ export function JobsFilters({
             onClick={onReset}
             className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
           >
-            Reset
+            {labels.reset}
           </button>
         ) : null}
 
@@ -114,7 +116,7 @@ export function JobsFilters({
             className={refreshing ? "size-4 animate-spin" : "size-4"}
             aria-hidden="true"
           />
-          Refresh
+          {labels.refresh}
         </button>
       </div>
     </div>

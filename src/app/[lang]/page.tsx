@@ -1,58 +1,62 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Clock3, ClipboardCheck, LayoutDashboard, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, Clock3, ClipboardCheck, Zap } from "lucide-react";
 
 import DemoLeadGenerator from "@/components/demo-lead-generator";
+import { SiteHeader } from "@/components/site-header";
+import { isLocale, type Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/get-dictionary";
+import { notFound } from "next/navigation";
 
-const FEATURES = [
-  {
-    icon: Zap,
-    title: "Synthetic demo intake",
-    description:
-      "Server-generated fictional leads are written through a protected API route. Visitors never submit contact data.",
-  },
-  {
-    icon: ClipboardCheck,
-    title: "Atomic claim",
-    description:
-      "Optional n8n workflow uses a Postgres RPC for single-winner claims and duplicate suppression per idempotency key.",
-  },
-  {
-    icon: Clock3,
-    title: "Status tracking",
-    description:
-      "A simple dashboard lists requests and supports manual status updates. Authentication is not implemented yet.",
-  },
-];
+export async function generateMetadata({
+  params,
+}: Readonly<{
+  params: Promise<{ lang: string }>;
+}>): Promise<Metadata> {
+  const { lang } = await params;
 
-export default function Home() {
+  if (!isLocale(lang)) {
+    return {};
+  }
+
+  const dictionary = getDictionary(lang);
+
+  return {
+    title: dictionary.metadata.homeTitle,
+    description: dictionary.metadata.homeDescription,
+  };
+}
+
+export default async function HomePage({
+  params,
+}: Readonly<{
+  params: Promise<{ lang: string }>;
+}>) {
+  const { lang } = await params;
+
+  if (!isLocale(lang)) {
+    notFound();
+  }
+
+  const locale: Locale = lang;
+  const dictionary = getDictionary(locale);
+
+  const features = [
+    { icon: Zap, ...dictionary.landing.features.synthetic },
+    { icon: ClipboardCheck, ...dictionary.landing.features.claim },
+    { icon: Clock3, ...dictionary.landing.features.tracking },
+  ];
+
   return (
     <div className="flex flex-1 flex-col bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-600/30">
-              <Sparkles className="size-4" aria-hidden="true" />
-            </span>
-            <span className="text-base font-semibold tracking-tight">Northwind Jobs</span>
-          </Link>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-          >
-            <LayoutDashboard className="size-4" aria-hidden="true" />
-            Dashboard
-          </Link>
-        </div>
-      </header>
+      <SiteHeader locale={locale} dictionary={dictionary} variant="landing" />
 
       <main className="flex-1">
         <div
           role="alert"
           className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center text-sm text-amber-900"
         >
-          <strong>Prototype — not production-ready.</strong> The dashboard has no login. Generate
-          only fictional demo leads from predefined presets. n8n automation is local, inactive
-          after import, and not wired to this Vercel deployment.
+          <strong>{dictionary.prototype.bannerStrong}</strong> {dictionary.prototype.banner}
         </div>
 
         <section className="relative overflow-hidden">
@@ -65,16 +69,15 @@ export default function Home() {
               <div className="lg:pt-6">
                 <span className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
                   <span className="size-1.5 rounded-full bg-indigo-500" aria-hidden="true" />
-                  Now accepting Q3 engagements
+                  {dictionary.landing.badge}
                 </span>
 
                 <h1 className="mt-6 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl sm:leading-[1.1]">
-                  Ship your backlog without hiring another team.
+                  {dictionary.landing.title}
                 </h1>
 
                 <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-                  Explore a bilingual lead-intake prototype with synthetic personas and projects.
-                  Generated identities are fictional and safe for public demos.
+                  {dictionary.landing.description}
                 </p>
 
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -82,19 +85,19 @@ export default function Home() {
                     href="#submit"
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800"
                   >
-                    Generate a demo lead
+                    {dictionary.landing.generateCta}
                     <ArrowRight className="size-4" aria-hidden="true" />
                   </a>
                   <Link
-                    href="/dashboard"
+                    href={`/${locale}/dashboard`}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
                   >
-                    View the dashboard
+                    {dictionary.landing.viewDashboardCta}
                   </Link>
                 </div>
 
                 <dl className="mt-12 grid gap-6 sm:grid-cols-3">
-                  {FEATURES.map(({ icon: Icon, title, description }) => (
+                  {features.map(({ icon: Icon, title, description }) => (
                     <div key={title}>
                       <dt className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                         <Icon className="size-4 text-indigo-600" aria-hidden="true" />
@@ -116,9 +119,14 @@ export default function Home() {
 
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>&copy; {new Date().getFullYear()} Northwind Jobs. All rights reserved.</p>
-          <Link href="/dashboard" className="font-medium text-slate-700 hover:text-indigo-600">
-            Admin dashboard
+          <p>
+            &copy; {new Date().getFullYear()} {dictionary.common.brand}. {dictionary.common.copyright}
+          </p>
+          <Link
+            href={`/${locale}/dashboard`}
+            className="font-medium text-slate-700 hover:text-indigo-600"
+          >
+            {dictionary.common.adminDashboard}
           </Link>
         </div>
       </footer>

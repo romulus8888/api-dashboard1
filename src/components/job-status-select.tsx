@@ -1,11 +1,7 @@
 import { STATUS_TONES } from "@/components/job-badges";
 import { Select, type SelectOption, type SelectSize } from "@/components/ui/select";
-import { JOB_STATUSES, JOB_STATUS_LABELS, type JobStatus } from "@/types/job";
-
-const STATUS_OPTIONS: SelectOption<JobStatus>[] = JOB_STATUSES.map((status) => ({
-  value: status,
-  label: JOB_STATUS_LABELS[status],
-}));
+import { useLocaleContext } from "@/i18n/locale-provider";
+import { JOB_STATUSES, type JobStatus } from "@/types/job";
 
 export interface JobStatusSelectProps {
   id: string;
@@ -29,13 +25,20 @@ export function JobStatusSelect({
   size = "md",
   className,
 }: JobStatusSelectProps) {
+  const { dictionary } = useLocaleContext();
+
+  const statusOptions: SelectOption<JobStatus>[] = JOB_STATUSES.map((status) => ({
+    value: status,
+    label: dictionary.jobs.status[status],
+  }));
+
   return (
     <Select
       id={id}
       label={label}
       hideLabel={hideLabel}
       value={value}
-      options={STATUS_OPTIONS}
+      options={statusOptions}
       onChange={onChange}
       disabled={disabled}
       tone={STATUS_TONES[value]}

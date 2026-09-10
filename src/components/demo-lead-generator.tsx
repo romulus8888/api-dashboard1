@@ -5,8 +5,11 @@ import { AlertCircle, Loader2, Sparkles } from "lucide-react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import { useLocaleContext } from "@/i18n/locale-provider";
 import { logger } from "@/lib/logger";
-import { cn, getErrorMessage } from "@/lib/utils";
+import { mapDemoApiError } from "@/lib/map-demo-api-error";
+import { cn } from "@/lib/utils";
+import { isDemoApiErrorCode } from "@/types/api-errors";
 import type { DemoLeadSummary, LeadLocale } from "@/types/lead";
 
 const LOG_SCOPE = "demo-lead-generator";
@@ -28,22 +31,25 @@ export default function DemoLeadGenerator() {
 }
 
 function DemoLeadGeneratorForm() {
+  const { locale, dictionary } = useLocaleContext();
   const { toast } = useToast();
   const turnstileRef = useRef<TurnstileInstance>(null);
-  const [locale, setLocale] = useState<LeadLocale>("en");
+  const [demoLocale, setDemoLocale] = useState<LeadLocale>(locale);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [generatedLead, setGeneratedLead] = useState<DemoLeadSummary | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const labels = dictionary.demo;
+  const priorityLabels = dictionary.jobs.priority;
 
   async function handleGenerate() {
     setSubmitError(null);
     setGeneratedLead(null);
 
     if (!turnstileToken) {
-      setSubmitError("Complete the verification challenge before generating a demo lead.");
+      setSubmitError(dictionary.errors.api.verification_required);
       return;
     }
 
@@ -56,7 +62,7 @@ function DemoLeadGeneratorForm() {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          locale,
+          locale: demoLocale,
           turnstileToken,
         }),
       });
@@ -65,18 +71,17 @@ function DemoLeadGeneratorForm() {
 
       if (!response.ok) {
         const errorPayload = payload as GenerateLeadErrorResponse;
-        const message =
-          typeof errorPayload.error === "string"
+        const errorCode =
+          typeof errorPayload.error === "string" && isDemoApiErrorCode(errorPayload.error)
             ? errorPayload.error
-            : "Unable to generate demo lead.";
+            : "generation_failed";
+        let message = mapDemoApiError(dictionary, errorCode);
 
         if (response.status === 429) {
           const retryAfter = response.headers.get("Retry-After");
-          throw new Error(
-            retryAfter
-              ? `${message} Try again in ${retryAfter} seconds.`
-              : message,
-          );
+          if (retryAfter) {
+            message = `${message} ${labels.retryAfterSeconds.replace("{seconds}", retryAfter)}`;
+          }
         }
 
         throw new Error(message);
@@ -92,18 +97,18 @@ function DemoLeadGeneratorForm() {
 
       toast({
         variant: "success",
-        title: "Demo lead generated",
-        description: "A fictional lead was created from predefined synthetic presets.",
+        title: labels.toastSuccessTitle,
+        description: labels.toastSuccessDescription,
       });
     } catch (error) {
-      const message = getErrorMessage(error);
+      const message = error instanceof Error ? error.message : mapDemoApiError(dictionary, "generation_failed");
       setSubmitError(message);
 
       logger.error(LOG_SCOPE, "Demo lead generation failed in UI", { message });
 
       toast({
         variant: "error",
-        title: "Could not generate demo lead",
+        title: labels.toastErrorTitle,
         description: message,
       });
     } finally {
@@ -116,20 +121,15 @@ function DemoLeadGeneratorForm() {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-          Generate demo lead
-        </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Creates a fictional contact and project from predefined synthetic presets. No visitor
-          names, emails, or project details are stored.
-        </p>
+        <h2 className="text-xl font-semibold tracking-tight text-slate-900">{labels.title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{labels.description}</p>
       </div>
 
       <div
         role="note"
         className="mb-6 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
       >
-        All generated identities and projects are fictional demo data for evaluation only.
+        {labels.note}
       </div>
 
       {submitError ? (
@@ -139,7 +139,7 @@ function DemoLeadGeneratorForm() {
         >
           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <div>
-            <p className="font-medium">Could not generate a demo lead.</p>
+            <p className="font-medium">{labels.errorTitle}</p>
             <p className="mt-0.5 break-words text-rose-700">{submitError}</p>
           </div>
         </div>
@@ -147,22 +147,22 @@ function DemoLeadGeneratorForm() {
 
       {generatedLead ? (
         <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-          <p className="font-medium">Latest synthetic lead</p>
+          <p className="font-medium">{labels.latestLeadTitle}</p>
           <dl className="mt-3 space-y-2">
             <div className="flex justify-between gap-4">
-              <dt className="text-emerald-800">Persona</dt>
+              <dt className="text-emerald-800">{labels.persona}</dt>
               <dd className="font-medium">{generatedLead.personaLabel}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-emerald-800">Project</dt>
+              <dt className="text-emerald-800">{labels.project}</dt>
               <dd className="text-right font-medium">{generatedLead.title}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-emerald-800">Priority</dt>
-              <dd className="font-medium capitalize">{generatedLead.priority}</dd>
+              <dt className="text-emerald-800">{labels.priority}</dt>
+              <dd className="font-medium">{priorityLabels[generatedLead.priority]}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-emerald-800">Locale</dt>
+              <dt className="text-emerald-800">{labels.locale}</dt>
               <dd className="font-medium uppercase">{generatedLead.locale}</dd>
             </div>
           </dl>
@@ -172,7 +172,7 @@ function DemoLeadGeneratorForm() {
       <div className="space-y-5">
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700" id="locale-label">
-            Demo locale
+            {labels.demoLocaleLabel}
           </p>
           <div
             role="radiogroup"
@@ -186,8 +186,8 @@ function DemoLeadGeneratorForm() {
                   type="radio"
                   name="locale"
                   value={value}
-                  checked={locale === value}
-                  onChange={() => setLocale(value)}
+                  checked={demoLocale === value}
+                  onChange={() => setDemoLocale(value)}
                   className="peer sr-only"
                   disabled={isSubmitting}
                 />
@@ -197,7 +197,7 @@ function DemoLeadGeneratorForm() {
                     "flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 peer-checked:border-indigo-400 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 peer-disabled:cursor-not-allowed peer-disabled:opacity-60",
                   )}
                 >
-                  {value === "en" ? "English" : "Russian"}
+                  {value === "en" ? labels.localeEnglish : labels.localeRussian}
                 </label>
               </div>
             ))}
@@ -206,7 +206,7 @@ function DemoLeadGeneratorForm() {
 
         {siteKey ? (
           <div>
-            <p className="mb-2 text-sm font-medium text-slate-700">Verification</p>
+            <p className="mb-2 text-sm font-medium text-slate-700">{labels.verification}</p>
             <Turnstile
               ref={turnstileRef}
               siteKey={siteKey}
@@ -217,10 +217,7 @@ function DemoLeadGeneratorForm() {
             />
           </div>
         ) : (
-          <p className="text-sm text-amber-700">
-            Turnstile is not configured for this environment. Generation will only work when
-            server verification is available.
-          </p>
+          <p className="text-sm text-amber-700">{labels.turnstileMissing}</p>
         )}
 
         <button
@@ -232,19 +229,17 @@ function DemoLeadGeneratorForm() {
           {isSubmitting ? (
             <>
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              Generating…
+              {labels.generating}
             </>
           ) : (
             <>
               <Sparkles className="size-4" aria-hidden="true" />
-              Generate demo lead
+              {labels.generateButton}
             </>
           )}
         </button>
 
-        <p className="text-center text-xs text-slate-400">
-          Synthetic-only demo. The legacy dashboard still reads legacy jobs data in this phase.
-        </p>
+        <p className="text-center text-xs text-slate-400">{labels.footerNote}</p>
       </div>
     </div>
   );

@@ -11,14 +11,14 @@ import { JobsTable } from "@/components/jobs-table";
 import { JobsTableSkeleton } from "@/components/jobs-table-skeleton";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { useJobs } from "@/hooks/use-jobs";
+import { useLocaleContext } from "@/i18n/locale-provider";
 import {
   DEFAULT_JOB_FILTERS,
   filterJobs,
   hasActiveFilters,
   type JobFilters,
 } from "@/lib/job-filters";
-import { getErrorMessage } from "@/lib/utils";
-import { JOB_STATUS_LABELS, type Job, type JobStatus } from "@/types/job";
+import type { Job, JobStatus } from "@/types/job";
 
 export default function JobsDashboard() {
   return (
@@ -29,6 +29,7 @@ export default function JobsDashboard() {
 }
 
 function JobsDashboardContent() {
+  const { dictionary } = useLocaleContext();
   const { jobs, loading, refreshing, loadError, updatingJobId, reload, refresh, updateStatus } =
     useJobs();
   const { toast } = useToast();
@@ -38,7 +39,6 @@ function JobsDashboardContent() {
 
   const visibleJobs = useMemo(() => filterJobs(jobs, filters), [jobs, filters]);
 
-  // Resolved from `jobs` rather than stored, so the drawer reflects status updates live.
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId],
@@ -49,14 +49,14 @@ function JobsDashboardContent() {
   const handleRefresh = useCallback(async () => {
     try {
       await refresh();
-    } catch (error) {
+    } catch {
       toast({
         variant: "error",
-        title: "Refresh failed",
-        description: getErrorMessage(error),
+        title: dictionary.jobs.toasts.refreshFailedTitle,
+        description: dictionary.jobs.error.refreshFailed,
       });
     }
-  }, [refresh, toast]);
+  }, [dictionary, refresh, toast]);
 
   const handleStatusChange = useCallback(
     async (job: Job, status: JobStatus) => {
@@ -66,19 +66,28 @@ function JobsDashboardContent() {
         await updateStatus(job, status);
         toast({
           variant: "success",
-          title: "Status updated",
-          description: `“${job.title}” is now ${JOB_STATUS_LABELS[status]}.`,
+          title: dictionary.jobs.toasts.statusUpdatedTitle,
+          description: dictionary.jobs.toasts.statusUpdatedDescription
+            .replace("{title}", job.title)
+            .replace("{status}", dictionary.jobs.status[status]),
         });
-      } catch (error) {
+      } catch {
         toast({
           variant: "error",
-          title: "Couldn't update status",
-          description: getErrorMessage(error),
+          title: dictionary.jobs.toasts.statusUpdateFailedTitle,
+          description: dictionary.jobs.error.updateFailed,
         });
       }
     },
-    [toast, updateStatus],
+    [dictionary, toast, updateStatus],
   );
+
+  const resolvedLoadError = loadError ? dictionary.jobs.error.loadFailed : null;
+
+  const countUnit =
+    jobs.length === 1
+      ? dictionary.dashboard.showingCountSingular
+      : dictionary.dashboard.showingCountPlural;
 
   return (
     <div className="space-y-6">
@@ -94,8 +103,8 @@ function JobsDashboardContent() {
           refreshing={refreshing}
         />
 
-        {loadError ? (
-          <JobsErrorState message={loadError} onRetry={reload} />
+        {resolvedLoadError ? (
+          <JobsErrorState message={resolvedLoadError} onRetry={reload} />
         ) : loading ? (
           <JobsTableSkeleton />
         ) : visibleJobs.length === 0 ? (
@@ -110,8 +119,10 @@ function JobsDashboardContent() {
               onStatusChange={(job, status) => void handleStatusChange(job, status)}
             />
             <p className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
-              Showing {visibleJobs.length} of {jobs.length}{" "}
-              {jobs.length === 1 ? "request" : "requests"}
+              {dictionary.dashboard.showingCount
+                .replace("{visible}", String(visibleJobs.length))
+                .replace("{total}", String(jobs.length))
+                .replace("{unit}", countUnit)}
             </p>
           </>
         )}

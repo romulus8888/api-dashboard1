@@ -1,6 +1,7 @@
 import { CheckCircle2, CircleDashed, Inbox, Timer } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useLocaleContext } from "@/i18n/locale-provider";
 import { cn } from "@/lib/utils";
 import type { Job } from "@/types/job";
 
@@ -12,27 +13,30 @@ export interface JobsStatsProps {
 }
 
 export function JobsStats({ jobs, loading }: JobsStatsProps) {
+  const { dictionary } = useLocaleContext();
+  const labels = dictionary.jobs.stats;
+
   const cards: { label: string; value: number; icon: StatIcon; accent: string }[] = [
     {
-      label: "Total jobs",
+      label: labels.total,
       value: jobs.length,
       icon: Inbox,
       accent: "text-slate-500 bg-slate-100",
     },
     {
-      label: "Pending",
+      label: labels.pending,
       value: jobs.filter((job) => job.status === "pending").length,
       icon: CircleDashed,
       accent: "text-amber-600 bg-amber-50",
     },
     {
-      label: "In progress",
+      label: labels.inProgress,
       value: jobs.filter((job) => job.status === "in_progress").length,
       icon: Timer,
       accent: "text-indigo-600 bg-indigo-50",
     },
     {
-      label: "Completed",
+      label: labels.completed,
       value: jobs.filter((job) => job.status === "completed").length,
       icon: CheckCircle2,
       accent: "text-emerald-600 bg-emerald-50",

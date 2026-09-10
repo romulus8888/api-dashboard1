@@ -1,22 +1,5 @@
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
+import type { Locale } from "@/i18n/config";
+import { toIntlLocale } from "@/i18n/config";
 
 /** Shown instead of "$NaN" or a thrown RangeError when a row carries unusable data. */
 const PLACEHOLDER = "—";
@@ -37,17 +20,53 @@ function toValidDate(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function formatCurrency(value: number | null | undefined): string {
+function createCurrencyFormatter(locale: Locale, currency: string): Intl.NumberFormat {
+  return new Intl.NumberFormat(toIntlLocale(locale), {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  });
+}
+
+function createDateFormatter(locale: Locale): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(toIntlLocale(locale), {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function createDateTimeFormatter(locale: Locale): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(toIntlLocale(locale), {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+export function formatCurrency(
+  value: number | null | undefined,
+  locale: Locale,
+  currency = "USD",
+): string {
   const amount = toFiniteNumber(value);
-  return amount === null ? PLACEHOLDER : currencyFormatter.format(amount);
+  return amount === null ? PLACEHOLDER : createCurrencyFormatter(locale, currency).format(amount);
 }
 
-export function formatDate(value: string | null | undefined): string {
+export function formatDate(
+  value: string | null | undefined,
+  locale: Locale,
+): string {
   const date = toValidDate(value);
-  return date === null ? PLACEHOLDER : dateFormatter.format(date);
+  return date === null ? PLACEHOLDER : createDateFormatter(locale).format(date);
 }
 
-export function formatDateTime(value: string | null | undefined): string {
+export function formatDateTime(
+  value: string | null | undefined,
+  locale: Locale,
+): string {
   const date = toValidDate(value);
-  return date === null ? PLACEHOLDER : dateTimeFormatter.format(date);
+  return date === null ? PLACEHOLDER : createDateTimeFormatter(locale).format(date);
 }

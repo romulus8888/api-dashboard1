@@ -3,13 +3,9 @@ import { Loader2 } from "lucide-react";
 import { PriorityBadge, StatusBadge } from "@/components/job-badges";
 import { JobStatusSelect } from "@/components/job-status-select";
 import { Drawer } from "@/components/ui/drawer";
+import { useLocaleContext } from "@/i18n/locale-provider";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { Job, JobStatus } from "@/types/job";
-
-const NEXT_STEPS: Partial<Record<JobStatus, { status: JobStatus; label: string }>> = {
-  pending: { status: "in_progress", label: "Start progress" },
-  in_progress: { status: "completed", label: "Mark completed" },
-};
 
 export interface JobDetailDrawerProps {
   /** The drawer is open whenever a job is provided. */
@@ -25,16 +21,24 @@ export function JobDetailDrawer({
   onClose,
   onStatusChange,
 }: JobDetailDrawerProps) {
+  const { locale, dictionary } = useLocaleContext();
+  const labels = dictionary.jobs.detail;
+
   if (!job) return null;
 
-  const nextStep = NEXT_STEPS[job.status];
+  const nextStep =
+    job.status === "pending"
+      ? { status: "in_progress" as const, label: labels.startProgress }
+      : job.status === "in_progress"
+        ? { status: "completed" as const, label: labels.markCompleted }
+        : null;
 
   return (
     <Drawer
       open
       onClose={onClose}
       title={job.title}
-      description={`Submitted by ${job.client_email}`}
+      description={labels.submittedBy.replace("{email}", job.client_email)}
       footer={
         <div className="flex items-center justify-end gap-3">
           <button
@@ -42,7 +46,7 @@ export function JobDetailDrawer({
             onClick={onClose}
             className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
           >
-            Close
+            {labels.close}
           </button>
           {nextStep ? (
             <button
@@ -66,7 +70,7 @@ export function JobDetailDrawer({
 
         <section>
           <h3 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
-            Description
+            {labels.description}
           </h3>
           <p className="mt-2 text-sm leading-relaxed whitespace-pre-line text-slate-700">
             {job.description}
@@ -76,7 +80,7 @@ export function JobDetailDrawer({
         <section className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
           <JobStatusSelect
             id={`drawer-status-${job.id}`}
-            label="Status"
+            label={labels.status}
             value={job.status}
             disabled={updating}
             onChange={(status) => onStatusChange(job, status)}
@@ -85,20 +89,20 @@ export function JobDetailDrawer({
             {updating ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                Saving…
+                {labels.saving}
               </>
             ) : (
-              "Changes save immediately."
+              labels.changesSaveImmediately
             )}
           </p>
         </section>
 
         <section>
           <h3 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
-            Details
+            {labels.details}
           </h3>
           <dl className="mt-3 divide-y divide-slate-100 border-y border-slate-100">
-            <DetailRow label="Client email">
+            <DetailRow label={labels.clientEmail}>
               <a
                 href={`mailto:${job.client_email}`}
                 className="text-indigo-600 transition hover:text-indigo-500 hover:underline"
@@ -106,11 +110,13 @@ export function JobDetailDrawer({
                 {job.client_email}
               </a>
             </DetailRow>
-            <DetailRow label="Budget">
-              <span className="font-medium tabular-nums">{formatCurrency(job.budget)}</span>
+            <DetailRow label={labels.budget}>
+              <span className="font-medium tabular-nums">
+                {formatCurrency(job.budget, locale, "USD")}
+              </span>
             </DetailRow>
-            <DetailRow label="Created">{formatDateTime(job.created_at)}</DetailRow>
-            <DetailRow label="Request ID">
+            <DetailRow label={labels.created}>{formatDateTime(job.created_at, locale)}</DetailRow>
+            <DetailRow label={labels.requestId}>
               <span className="font-mono text-xs break-all text-slate-500">{job.id}</span>
             </DetailRow>
           </dl>

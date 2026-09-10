@@ -27,20 +27,21 @@ import {
   createServerSupabaseClient,
   SupabaseServerConfigError,
 } from "@/lib/supabase/server";
+import type { DemoApiErrorCode } from "@/types/api-errors";
 import type { DemoLeadSummary } from "@/types/lead";
 
 const LOG_SCOPE = "demo-generate-lead";
 
 interface JsonErrorBody {
-  error: string;
+  error: DemoApiErrorCode;
 }
 
 function jsonResponse(body: unknown, status: number, headers?: HeadersInit): Response {
   return Response.json(body, { status, headers });
 }
 
-function jsonError(message: string, status: number, headers?: HeadersInit): Response {
-  return jsonResponse({ error: message } satisfies JsonErrorBody, status, headers);
+function jsonError(code: DemoApiErrorCode, status: number, headers?: HeadersInit): Response {
+  return jsonResponse({ error: code } satisfies JsonErrorBody, status, headers);
 }
 
 async function readRequestBody(request: Request): Promise<string> {
@@ -55,14 +56,14 @@ async function readRequestBody(request: Request): Promise<string> {
 
 export class BodyTooLargeError extends Error {
   constructor() {
-    super("Request body exceeds the 1 KB limit.");
+    super("body_too_large");
     this.name = "BodyTooLargeError";
   }
 }
 
 export class InvalidJsonError extends Error {
   constructor() {
-    super("Request body must be valid JSON.");
+    super("invalid_json");
     this.name = "InvalidJsonError";
   }
 }
@@ -70,11 +71,11 @@ export class InvalidJsonError extends Error {
 export async function handleGenerateDemoLead(request: Request): Promise<Response> {
   try {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      return jsonError("Demo lead generation is not configured.", 503);
+      return jsonError("demo_not_configured", 503);
     }
 
     if (isProductionEnvironment() && !getTurnstileSecretKey()) {
-      return jsonError("Demo lead generation is not configured.", 503);
+      return jsonError("demo_not_configured", 503);
     }
 
     const rateLimitConfig = getRateLimitConfig();
@@ -84,7 +85,7 @@ export async function handleGenerateDemoLead(request: Request): Promise<Response
     const rateLimit = await checkDemoRateLimit(supabase, bucketKey, rateLimitConfig);
 
     if (!rateLimit.allowed) {
-      return jsonError("Too many demo lead requests. Please try again later.", 429, {
+      return jsonError("rate_limited", 429, {
         "Retry-After": String(rateLimit.retryAfterSeconds),
       });
     }
@@ -116,19 +117,19 @@ export async function handleGenerateDemoLead(request: Request): Promise<Response
     return jsonResponse({ lead: summary }, 201);
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
-      return jsonError(error.message, 413);
+      return jsonError("body_too_large", 413);
     }
 
     if (error instanceof InvalidJsonError) {
-      return jsonError(error.message, 400);
+      return jsonError("invalid_json", 400);
     }
 
     if (error instanceof ZodError) {
-      return jsonError("Invalid request payload.", 400);
+      return jsonError("invalid_payload", 400);
     }
 
     if (error instanceof TurnstileVerificationError) {
-      return jsonError("Turnstile verification failed.", 403);
+      return jsonError("turnstile_failed", 403);
     }
 
     if (
@@ -139,13 +140,13 @@ export async function handleGenerateDemoLead(request: Request): Promise<Response
       logger.error(LOG_SCOPE, "Demo lead generation configuration error", {
         error: error.name,
       });
-      return jsonError("Demo lead generation is not configured.", 503);
+      return jsonError("demo_not_configured", 503);
     }
 
     logger.error(LOG_SCOPE, "Demo lead generation failed", {
       message: error instanceof Error ? error.message : "unknown error",
     });
 
-    return jsonError("Unable to generate demo lead.", 500);
+    return jsonError("generation_failed", 500);
   }
 }

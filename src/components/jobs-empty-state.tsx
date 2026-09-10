@@ -1,11 +1,15 @@
 import { Inbox, SearchX } from "lucide-react";
 
+import { useLocaleContext } from "@/i18n/locale-provider";
+
 export interface JobsEmptyStateProps {
   filtered: boolean;
   onClearFilters: () => void;
 }
 
 export function JobsEmptyState({ filtered, onClearFilters }: JobsEmptyStateProps) {
+  const { dictionary } = useLocaleContext();
+  const labels = dictionary.jobs.empty;
   const Icon = filtered ? SearchX : Inbox;
 
   return (
@@ -14,12 +18,10 @@ export function JobsEmptyState({ filtered, onClearFilters }: JobsEmptyStateProps
         <Icon className="size-6" aria-hidden="true" />
       </span>
       <h3 className="mt-4 text-sm font-semibold text-slate-900">
-        {filtered ? "No requests found" : "No requests yet"}
+        {filtered ? labels.filteredTitle : labels.noneTitle}
       </h3>
       <p className="mt-1 max-w-sm text-sm text-slate-500">
-        {filtered
-          ? "No job requests match your current search and filters. Try a different term or widen the filters."
-          : "Requests submitted through the landing page will show up here."}
+        {filtered ? labels.filteredDescription : labels.noneDescription}
       </p>
       {filtered ? (
         <button
@@ -27,7 +29,7 @@ export function JobsEmptyState({ filtered, onClearFilters }: JobsEmptyStateProps
           onClick={onClearFilters}
           className="mt-4 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
         >
-          Clear filters
+          {labels.clearFilters}
         </button>
       ) : null}
     </div>
