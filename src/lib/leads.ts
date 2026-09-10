@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database, DemoLeadSummary, Lead, LeadInsert } from "@/types/lead";
+import type { Database, DemoLeadSummary, LeadInsert, SyntheticLead } from "@/types/lead";
 
 export class LeadsApiError extends Error {
   readonly code: string | undefined;
@@ -15,7 +15,7 @@ export class LeadsApiError extends Error {
 }
 
 export function toDemoLeadSummary(
-  lead: Lead,
+  lead: SyntheticLead,
   personaLabel: string,
 ): DemoLeadSummary {
   return {
@@ -33,7 +33,7 @@ export function toDemoLeadSummary(
 export async function insertSyntheticLead(
   supabase: SupabaseClient<Database>,
   input: LeadInsert,
-): Promise<Lead> {
+): Promise<SyntheticLead> {
   const { data, error } = await supabase
     .from("leads")
     .insert(input)

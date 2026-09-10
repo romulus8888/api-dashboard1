@@ -31,6 +31,33 @@ export const LEAD_LOCALES = ["en", "ru"] as const;
 
 export type LeadLocale = (typeof LEAD_LOCALES)[number];
 
+export interface OperatorProfile {
+  id: string;
+  display_name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SyntheticLead = Pick<
+  Lead,
+  | "id"
+  | "status"
+  | "priority"
+  | "source"
+  | "locale"
+  | "contact_name"
+  | "contact_email"
+  | "contact_phone"
+  | "title"
+  | "description"
+  | "budget_amount"
+  | "budget_currency"
+  | "is_synthetic"
+  | "demo_reset_group_id"
+  | "created_at"
+>;
+
 export interface Lead {
   id: string;
   status: LeadStatus;
@@ -44,9 +71,19 @@ export interface Lead {
   description: string;
   budget_amount: number | null;
   budget_currency: string;
+  owner_id: string | null;
+  next_action_at: string | null;
+  first_response_due_at: string | null;
+  won_at: string | null;
+  lost_at: string | null;
+  loss_reason: string | null;
+  duplicate_of_lead_id: string | null;
   is_synthetic: boolean;
   demo_reset_group_id: string | null;
+  automation_state: string;
+  automation_attempt: number;
   created_at: string;
+  updated_at: string;
 }
 
 type LeadRow = { [K in keyof Lead]: Lead[K] };
@@ -65,6 +102,7 @@ export type LeadInsert = {
   is_synthetic?: boolean;
   demo_reset_group_id?: string | null;
   status?: LeadStatus;
+  loss_reason?: string | null;
 };
 
 interface DemoRateLimitBucketRow {
@@ -93,6 +131,8 @@ export interface DemoLeadSummary {
   createdAt: string;
 }
 
+type OperatorProfileRow = { [K in keyof OperatorProfile]: OperatorProfile[K] };
+
 export interface Database {
   public: {
     Tables: {
@@ -100,6 +140,14 @@ export interface Database {
         Row: LeadRow;
         Insert: LeadInsert;
         Update: Partial<LeadInsert>;
+        Relationships: [];
+      };
+      operator_profiles: {
+        Row: OperatorProfileRow;
+        Insert: Pick<OperatorProfileRow, "id" | "display_name"> & {
+          is_active?: boolean;
+        };
+        Update: Partial<OperatorProfileRow>;
         Relationships: [];
       };
       demo_rate_limit_buckets: {
@@ -118,6 +166,16 @@ export interface Database {
           p_window_seconds: number;
         };
         Returns: DemoRateLimitResult;
+      };
+      transition_lead_status: {
+        Args: {
+          p_lead_id: string;
+          p_to_status: LeadStatus;
+          p_change_source: string;
+          p_changed_by: string | null;
+          p_reason: string | null;
+        };
+        Returns: LeadRow;
       };
     };
     Enums: {
