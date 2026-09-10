@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, Clock3, ClipboardCheck, LayoutDashboard, Sparkles, Zap } from "lucide-react";
 
-import JobForm from "@/components/job-form";
+import DemoLeadGenerator from "@/components/demo-lead-generator";
 
 const FEATURES = [
   {
     icon: Zap,
-    title: "Form to database",
+    title: "Synthetic demo intake",
     description:
-      "Validated intake writes directly to Supabase. Suitable for demos and local development only.",
+      "Server-generated fictional leads are written through a protected API route. Visitors never submit contact data.",
   },
   {
     icon: ClipboardCheck,
@@ -50,9 +50,9 @@ export default function Home() {
           role="alert"
           className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center text-sm text-amber-900"
         >
-          <strong>Prototype — not production-ready.</strong> The dashboard has no login. Submit
-          only synthetic test data. n8n automation is local, inactive after import, and not wired
-          to this Vercel deployment.
+          <strong>Prototype — not production-ready.</strong> The dashboard has no login. Generate
+          only fictional demo leads from predefined presets. n8n automation is local, inactive
+          after import, and not wired to this Vercel deployment.
         </div>
 
         <section className="relative overflow-hidden">
@@ -73,8 +73,8 @@ export default function Home() {
                 </h1>
 
                 <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-                  Submit a project brief and our engineers scope, prioritize, and deliver it. You
-                  keep full visibility from the first request to the final handoff.
+                  Explore a bilingual lead-intake prototype with synthetic personas and projects.
+                  Generated identities are fictional and safe for public demos.
                 </p>
 
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -82,7 +82,7 @@ export default function Home() {
                     href="#submit"
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800"
                   >
-                    Submit a request
+                    Generate a demo lead
                     <ArrowRight className="size-4" aria-hidden="true" />
                   </a>
                   <Link
@@ -107,7 +107,7 @@ export default function Home() {
               </div>
 
               <div id="submit" className="scroll-mt-24">
-                <JobForm />
+                <DemoLeadGenerator />
               </div>
             </div>
           </div>

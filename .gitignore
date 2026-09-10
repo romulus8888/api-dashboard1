@@ -34,6 +34,7 @@ yarn-error.log*
 .env*
 # local n8n environment: real values stay out of Git, template is committed
 !automation/.env.example
+!.env.example
 
 # vercel
 .vercel
