@@ -8,11 +8,11 @@ import { JobStatusSelect } from "@/components/job-status-select";
 import { Drawer } from "@/components/ui/drawer";
 import { useLocaleContext } from "@/i18n/locale-provider";
 import {
-  AdminLeadsApiError,
   fetchAdminLead,
   type AdminLeadDetail,
   type AdminLeadListItem,
 } from "@/lib/admin/admin-leads-client";
+import { isAdminSessionExpired } from "@/lib/auth/admin-session-expiry";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { LeadStatus } from "@/types/lead";
 
@@ -20,6 +20,7 @@ export interface JobDetailDrawerProps {
   lead: AdminLeadListItem | null;
   updating: boolean;
   onClose: () => void;
+  onSessionExpired: () => void;
   onStatusChange: (lead: AdminLeadListItem, status: LeadStatus) => Promise<void>;
 }
 
@@ -32,6 +33,7 @@ function JobDetailDrawerContent({
   lead,
   updating,
   onClose,
+  onSessionExpired,
   onStatusChange,
 }: JobDetailDrawerProps & { lead: AdminLeadListItem }) {
   const { locale, dictionary } = useLocaleContext();
@@ -51,11 +53,13 @@ function JobDetailDrawerContent({
       },
       (error: unknown) => {
         if (cancelled) return;
-        if (error instanceof AdminLeadsApiError && error.code === "session_expired") {
-          setDetailError(dictionary.leads.error.sessionExpired);
-        } else {
-          setDetailError(dictionary.leads.error.loadFailed);
+
+        if (isAdminSessionExpired(error)) {
+          onSessionExpired();
+          return;
         }
+
+        setDetailError(dictionary.leads.error.loadFailed);
         setDetailLoading(false);
       },
     );
@@ -63,7 +67,7 @@ function JobDetailDrawerContent({
     return () => {
       cancelled = true;
     };
-  }, [dictionary, lead.id]);
+  }, [dictionary, lead.id, onSessionExpired]);
 
   const activeLead = detail ?? lead;
 

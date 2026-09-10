@@ -8,9 +8,14 @@ import {
   type AdminLeadListItem,
   updateAdminLeadStatus,
 } from "@/lib/admin/admin-leads-client";
+import { isAdminSessionExpired } from "@/lib/auth/admin-session-expiry";
 import type { LeadStatus } from "@/types/lead";
 
-export type LeadsLoadErrorCode = "session_expired" | "forbidden" | "load_failed";
+export type LeadsLoadErrorCode = "forbidden" | "load_failed";
+
+export interface UseLeadsOptions {
+  onSessionExpired?: () => void;
+}
 
 export interface UseLeadsResult {
   leads: AdminLeadListItem[];
@@ -24,15 +29,27 @@ export interface UseLeadsResult {
 }
 
 function toLoadErrorCode(error: unknown): LeadsLoadErrorCode {
-  if (error instanceof AdminLeadsApiError) {
-    if (error.code === "session_expired") return "session_expired";
-    if (error.code === "forbidden") return "forbidden";
+  if (error instanceof AdminLeadsApiError && error.code === "forbidden") {
+    return "forbidden";
   }
 
   return "load_failed";
 }
 
-export function useLeads(): UseLeadsResult {
+function handleSessionExpiry(
+  onSessionExpired: (() => void) | undefined,
+  clearState: () => void,
+): boolean {
+  if (!onSessionExpired) {
+    return false;
+  }
+
+  clearState();
+  onSessionExpired();
+  return true;
+}
+
+export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsResult {
   const [leads, setLeads] = useState<AdminLeadListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,6 +57,11 @@ export function useLeads(): UseLeadsResult {
   const [updatingLeadId, setUpdatingLeadId] = useState<string | null>(null);
   const [loadToken, setLoadToken] = useState(0);
   const isMounted = useRef(true);
+  const onSessionExpiredRef = useRef(onSessionExpired);
+
+  useEffect(() => {
+    onSessionExpiredRef.current = onSessionExpired;
+  }, [onSessionExpired]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -47,6 +69,16 @@ export function useLeads(): UseLeadsResult {
       isMounted.current = false;
     };
   }, []);
+
+  const clearLoadedLeads = useCallback(() => {
+    setLeads([]);
+    setLoadError(null);
+    setUpdatingLeadId(null);
+  }, []);
+
+  const notifySessionExpired = useCallback(() => {
+    handleSessionExpiry(onSessionExpiredRef.current, clearLoadedLeads);
+  }, [clearLoadedLeads]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +92,13 @@ export function useLeads(): UseLeadsResult {
       },
       (error: unknown) => {
         if (cancelled) return;
+
+        if (isAdminSessionExpired(error)) {
+          notifySessionExpired();
+          setLoading(false);
+          return;
+        }
+
         setLoadError(toLoadErrorCode(error));
         setLoading(false);
       },
@@ -68,7 +107,7 @@ export function useLeads(): UseLeadsResult {
     return () => {
       cancelled = true;
     };
-  }, [loadToken]);
+  }, [loadToken, notifySessionExpired]);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -85,10 +124,17 @@ export function useLeads(): UseLeadsResult {
         setLeads(data);
         setLoadError(null);
       }
+    } catch (error) {
+      if (isMounted.current && isAdminSessionExpired(error)) {
+        notifySessionExpired();
+        return;
+      }
+
+      throw error;
     } finally {
       if (isMounted.current) setRefreshing(false);
     }
-  }, []);
+  }, [notifySessionExpired]);
 
   const patchStatus = useCallback((id: string, status: LeadStatus) => {
     setLeads((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
@@ -104,12 +150,18 @@ export function useLeads(): UseLeadsResult {
         await updateAdminLeadStatus(lead.id, status);
       } catch (error) {
         patchStatus(lead.id, previousStatus);
+
+        if (isMounted.current && isAdminSessionExpired(error)) {
+          notifySessionExpired();
+          return;
+        }
+
         throw error;
       } finally {
         if (isMounted.current) setUpdatingLeadId(null);
       }
     },
-    [patchStatus],
+    [notifySessionExpired, patchStatus],
   );
 
   return {

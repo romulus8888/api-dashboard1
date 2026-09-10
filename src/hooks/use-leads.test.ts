@@ -1,7 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
 
-import { AdminLeadsApiError } from "@/lib/admin/admin-leads-client";
+import { AdminLeadsApiError, fetchAdminLeads, updateAdminLeadStatus } from "@/lib/admin/admin-leads-client";
+import { useLeads } from "@/hooks/use-leads";
 import type { LeadStatus } from "@/types/lead";
+
+vi.mock("@/lib/admin/admin-leads-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/admin/admin-leads-client")>();
+  return {
+    ...actual,
+    fetchAdminLeads: vi.fn(),
+    updateAdminLeadStatus: vi.fn(),
+  };
+});
 
 const lead = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -20,53 +31,64 @@ const lead = {
   updated_at: "2026-09-10T12:00:00.000Z",
 };
 
-function patchLeadStatus<T extends { id: string; status: LeadStatus }>(
-  items: T[],
-  id: string,
-  status: LeadStatus,
-): T[] {
-  return items.map((item) => (item.id === id ? { ...item, status } : item));
-}
-
-async function runOptimisticStatusUpdate(
-  items: typeof lead[],
-  nextStatus: LeadStatus,
-  update: (id: string, status: LeadStatus) => Promise<unknown>,
-) {
-  const target = items[0];
-  if (!target) throw new Error("missing lead");
-
-  const previousStatus = target.status;
-  let current = patchLeadStatus(items, target.id, nextStatus);
-
-  try {
-    await update(target.id, nextStatus);
-  } catch (error) {
-    current = patchLeadStatus(current, target.id, previousStatus);
-    throw error;
-  }
-
-  return current;
-}
-
-describe("useLeads optimistic status behavior", () => {
-  it("rolls back to the previous status when the admin API update fails", async () => {
-    const update = async () => {
-      throw new AdminLeadsApiError("request_failed", 500);
-    };
-
-    await expect(runOptimisticStatusUpdate([lead], "contacted", update)).rejects.toBeInstanceOf(
-      AdminLeadsApiError,
-    );
-
-    const optimistic = patchLeadStatus([lead], lead.id, "contacted");
-    const rolledBack = patchLeadStatus(optimistic, lead.id, lead.status);
-    expect(rolledBack[0]?.status).toBe("new");
+describe("useLeads", () => {
+  beforeEach(() => {
+    vi.mocked(fetchAdminLeads).mockReset();
+    vi.mocked(updateAdminLeadStatus).mockReset();
   });
 
-  it("surfaces session expiry from the admin API client", () => {
-    const error = new AdminLeadsApiError("session_expired", 401);
-    expect(error.code).toBe("session_expired");
-    expect(error.status).toBe(401);
+  it("clears loaded leads and notifies once when the initial list expires", async () => {
+    vi.mocked(fetchAdminLeads).mockRejectedValue(new AdminLeadsApiError("session_expired", 401));
+    const onSessionExpired = vi.fn();
+
+    const { result } = renderHook(() => useLeads({ onSessionExpired }));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.leads).toEqual([]);
+    expect(result.current.loadError).toBeNull();
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears loaded leads on refresh expiry without setting a load error", async () => {
+    vi.mocked(fetchAdminLeads)
+      .mockResolvedValueOnce([lead])
+      .mockRejectedValueOnce(new AdminLeadsApiError("session_expired", 401));
+
+    const onSessionExpired = vi.fn();
+    const { result } = renderHook(() => useLeads({ onSessionExpired }));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await result.current.refresh();
+
+    await waitFor(() => {
+      expect(result.current.leads).toEqual([]);
+    });
+    expect(result.current.loadError).toBeNull();
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back optimistic status updates before handling session expiry", async () => {
+    vi.mocked(fetchAdminLeads).mockResolvedValue([lead]);
+    vi.mocked(updateAdminLeadStatus).mockRejectedValue(new AdminLeadsApiError("session_expired", 401));
+
+    const onSessionExpired = vi.fn();
+    const { result } = renderHook(() => useLeads({ onSessionExpired }));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await result.current.updateStatus(lead, "contacted" as LeadStatus);
+
+    await waitFor(() => {
+      expect(result.current.leads).toEqual([]);
+    });
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
   });
 });

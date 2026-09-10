@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
 
 import { JobDetailDrawer } from "@/components/job-detail-drawer";
 import { JobsEmptyState } from "@/components/jobs-empty-state";
@@ -12,6 +11,7 @@ import { JobsTable } from "@/components/jobs-table";
 import { JobsTableSkeleton } from "@/components/jobs-table-skeleton";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { useLeads } from "@/hooks/use-leads";
+import { useSessionExpiredRedirect } from "@/hooks/use-session-expired-redirect";
 import { useLocaleContext } from "@/i18n/locale-provider";
 import type { AdminLeadListItem } from "@/lib/admin/admin-leads-client";
 import {
@@ -39,14 +39,19 @@ export default function JobsDashboard() {
 }
 
 function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
-  const router = useRouter();
-  const { locale, dictionary } = useLocaleContext();
-  const { leads, loading, refreshing, loadError, updatingLeadId, reload, refresh, updateStatus } =
-    useLeads();
-  const { toast } = useToast();
-
+  const { dictionary } = useLocaleContext();
+  const redirectToLogin = useSessionExpiredRedirect();
   const [filters, setFilters] = useState<LeadFilters>(DEFAULT_LEAD_FILTERS);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+
+  const handleSessionExpired = useCallback(() => {
+    setSelectedLeadId(null);
+    redirectToLogin();
+  }, [redirectToLogin]);
+
+  const { leads, loading, refreshing, loadError, updatingLeadId, reload, refresh, updateStatus } =
+    useLeads({ onSessionExpired: handleSessionExpired });
+  const { toast } = useToast();
 
   const visibleLeads = useMemo(() => filterLeads(leads, filters), [leads, filters]);
 
@@ -59,7 +64,6 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
 
   const resolvedLoadError = useMemo(() => {
     if (!loadError) return null;
-    if (loadError === "session_expired") return dictionary.leads.error.sessionExpired;
     if (loadError === "forbidden") return dictionary.leads.error.forbidden;
     return dictionary.leads.error.loadFailed;
   }, [dictionary, loadError]);
@@ -99,12 +103,6 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
     },
     [dictionary, toast, updateStatus],
   );
-
-  useEffect(() => {
-    if (loadError === "session_expired" && !loading) {
-      router.replace(`/${locale}/login?returnTo=${encodeURIComponent(`/${locale}/dashboard`)}`);
-    }
-  }, [loadError, loading, locale, router]);
 
   const countUnit =
     leads.length === 1
@@ -154,6 +152,7 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
         lead={selectedLead}
         updating={selectedLead !== null && updatingLeadId === selectedLead.id}
         onClose={() => setSelectedLeadId(null)}
+        onSessionExpired={handleSessionExpired}
         onStatusChange={handleStatusChange}
       />
     </div>

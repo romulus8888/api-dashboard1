@@ -1,20 +1,27 @@
 import { createServerClient } from "@supabase/ssr";
-import type { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 import type { Database } from "@/types/lead";
 
-export function createProxySupabaseClient(
-  request: NextRequest,
-  response: NextResponse,
-) {
+export interface ProxySupabaseSession {
+  client: ReturnType<typeof createServerClient<Database>> | null;
+  getAuthResponse: () => NextResponse;
+}
+
+export function createProxySupabaseSession(request: NextRequest): ProxySupabaseSession {
+  let authResponse = NextResponse.next({ request });
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return null;
+    return {
+      client: null,
+      getAuthResponse: () => authResponse,
+    };
   }
 
-  return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
+  const client = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -24,10 +31,17 @@ export function createProxySupabaseClient(
           request.cookies.set(name, value);
         });
 
+        authResponse = NextResponse.next({ request });
+
         cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
+          authResponse.cookies.set(name, value, options);
         });
       },
     },
   });
+
+  return {
+    client,
+    getAuthResponse: () => authResponse,
+  };
 }
