@@ -9,7 +9,7 @@ export interface JobsEmptyStateProps {
 
 export function JobsEmptyState({ filtered, onClearFilters }: JobsEmptyStateProps) {
   const { dictionary } = useLocaleContext();
-  const labels = dictionary.jobs.empty;
+  const labels = dictionary.leads.empty;
   const Icon = filtered ? SearchX : Inbox;
 
   return (

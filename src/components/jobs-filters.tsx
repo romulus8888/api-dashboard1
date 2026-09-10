@@ -4,15 +4,15 @@ import { Select, type SelectOption } from "@/components/ui/select";
 import { useLocaleContext } from "@/i18n/locale-provider";
 import {
   hasActiveFilters,
-  type JobFilters,
+  type LeadFilters,
   type PriorityFilter,
   type StatusFilter,
-} from "@/lib/job-filters";
-import { JOB_PRIORITIES, JOB_STATUSES } from "@/types/job";
+} from "@/lib/lead-filters";
+import { LEAD_PRIORITIES, LEAD_STATUSES } from "@/types/lead";
 
 export interface JobsFiltersProps {
-  filters: JobFilters;
-  onChange: (filters: JobFilters) => void;
+  filters: LeadFilters;
+  onChange: (filters: LeadFilters) => void;
   onReset: () => void;
   onRefresh: () => void;
   refreshDisabled: boolean;
@@ -28,21 +28,21 @@ export function JobsFilters({
   refreshing,
 }: JobsFiltersProps) {
   const { dictionary } = useLocaleContext();
-  const labels = dictionary.jobs.filters;
+  const labels = dictionary.leads.filters;
 
   const statusFilterOptions: SelectOption<StatusFilter>[] = [
     { value: "all", label: labels.allStatuses },
-    ...JOB_STATUSES.map((status) => ({
+    ...LEAD_STATUSES.map((status) => ({
       value: status,
-      label: dictionary.jobs.status[status],
+      label: dictionary.leads.status[status],
     })),
   ];
 
   const priorityFilterOptions: SelectOption<PriorityFilter>[] = [
     { value: "all", label: labels.allPriorities },
-    ...JOB_PRIORITIES.map((priority) => ({
+    ...LEAD_PRIORITIES.map((priority) => ({
       value: priority,
-      label: dictionary.jobs.priority[priority],
+      label: dictionary.leads.priority[priority],
     })),
   ];
 

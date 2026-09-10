@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { JobDetailDrawer } from "@/components/job-detail-drawer";
 import { JobsEmptyState } from "@/components/jobs-empty-state";
@@ -10,15 +11,16 @@ import { JobsStats } from "@/components/jobs-stats";
 import { JobsTable } from "@/components/jobs-table";
 import { JobsTableSkeleton } from "@/components/jobs-table-skeleton";
 import { ToastProvider, useToast } from "@/components/ui/toast";
-import { useJobs } from "@/hooks/use-jobs";
+import { useLeads } from "@/hooks/use-leads";
 import { useLocaleContext } from "@/i18n/locale-provider";
+import type { AdminLeadListItem } from "@/lib/admin/admin-leads-client";
 import {
-  DEFAULT_JOB_FILTERS,
-  filterJobs,
+  DEFAULT_LEAD_FILTERS,
+  filterLeads,
   hasActiveFilters,
-  type JobFilters,
-} from "@/lib/job-filters";
-import type { Job, JobStatus } from "@/types/job";
+  type LeadFilters,
+} from "@/lib/lead-filters";
+import type { LeadStatus } from "@/types/lead";
 
 export default function JobsDashboard() {
   const { dictionary } = useLocaleContext();
@@ -31,28 +33,36 @@ export default function JobsDashboard() {
         dismissLabel: a11y.dismissNotification,
       }}
     >
-      <JobsDashboardContent loadingLabel={a11y.loadingJobRequests} />
+      <JobsDashboardContent loadingLabel={a11y.loadingLeads} />
     </ToastProvider>
   );
 }
 
 function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
-  const { dictionary } = useLocaleContext();
-  const { jobs, loading, refreshing, loadError, updatingJobId, reload, refresh, updateStatus } =
-    useJobs();
+  const router = useRouter();
+  const { locale, dictionary } = useLocaleContext();
+  const { leads, loading, refreshing, loadError, updatingLeadId, reload, refresh, updateStatus } =
+    useLeads();
   const { toast } = useToast();
 
-  const [filters, setFilters] = useState<JobFilters>(DEFAULT_JOB_FILTERS);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<LeadFilters>(DEFAULT_LEAD_FILTERS);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
-  const visibleJobs = useMemo(() => filterJobs(jobs, filters), [jobs, filters]);
+  const visibleLeads = useMemo(() => filterLeads(leads, filters), [leads, filters]);
 
-  const selectedJob = useMemo(
-    () => jobs.find((job) => job.id === selectedJobId) ?? null,
-    [jobs, selectedJobId],
+  const selectedLead = useMemo(
+    () => leads.find((lead) => lead.id === selectedLeadId) ?? null,
+    [leads, selectedLeadId],
   );
 
-  const resetFilters = useCallback(() => setFilters(DEFAULT_JOB_FILTERS), []);
+  const resetFilters = useCallback(() => setFilters(DEFAULT_LEAD_FILTERS), []);
+
+  const resolvedLoadError = useMemo(() => {
+    if (!loadError) return null;
+    if (loadError === "session_expired") return dictionary.leads.error.sessionExpired;
+    if (loadError === "forbidden") return dictionary.leads.error.forbidden;
+    return dictionary.leads.error.loadFailed;
+  }, [dictionary, loadError]);
 
   const handleRefresh = useCallback(async () => {
     try {
@@ -60,46 +70,50 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
     } catch {
       toast({
         variant: "error",
-        title: dictionary.jobs.toasts.refreshFailedTitle,
-        description: dictionary.jobs.error.refreshFailed,
+        title: dictionary.leads.toasts.refreshFailedTitle,
+        description: dictionary.leads.error.refreshFailed,
       });
     }
   }, [dictionary, refresh, toast]);
 
   const handleStatusChange = useCallback(
-    async (job: Job, status: JobStatus) => {
-      if (job.status === status) return;
+    async (lead: AdminLeadListItem, status: LeadStatus) => {
+      if (lead.status === status) return;
 
       try {
-        await updateStatus(job, status);
+        await updateStatus(lead, status);
         toast({
           variant: "success",
-          title: dictionary.jobs.toasts.statusUpdatedTitle,
-          description: dictionary.jobs.toasts.statusUpdatedDescription
-            .replace("{title}", job.title)
-            .replace("{status}", dictionary.jobs.status[status]),
+          title: dictionary.leads.toasts.statusUpdatedTitle,
+          description: dictionary.leads.toasts.statusUpdatedDescription
+            .replace("{title}", lead.title)
+            .replace("{status}", dictionary.leads.status[status]),
         });
       } catch {
         toast({
           variant: "error",
-          title: dictionary.jobs.toasts.statusUpdateFailedTitle,
-          description: dictionary.jobs.error.updateFailed,
+          title: dictionary.leads.toasts.statusUpdateFailedTitle,
+          description: dictionary.leads.error.updateFailed,
         });
       }
     },
     [dictionary, toast, updateStatus],
   );
 
-  const resolvedLoadError = loadError ? dictionary.jobs.error.loadFailed : null;
+  useEffect(() => {
+    if (loadError === "session_expired" && !loading) {
+      router.replace(`/${locale}/login?returnTo=${encodeURIComponent(`/${locale}/dashboard`)}`);
+    }
+  }, [loadError, loading, locale, router]);
 
   const countUnit =
-    jobs.length === 1
+    leads.length === 1
       ? dictionary.dashboard.showingCountSingular
       : dictionary.dashboard.showingCountPlural;
 
   return (
     <div className="space-y-6">
-      <JobsStats jobs={jobs} loading={loading} />
+      <JobsStats leads={leads} loading={loading} />
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <JobsFilters
@@ -115,21 +129,21 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
           <JobsErrorState message={resolvedLoadError} onRetry={reload} />
         ) : loading ? (
           <JobsTableSkeleton loadingLabel={loadingLabel} />
-        ) : visibleJobs.length === 0 ? (
+        ) : visibleLeads.length === 0 ? (
           <JobsEmptyState filtered={hasActiveFilters(filters)} onClearFilters={resetFilters} />
         ) : (
           <>
             <JobsTable
-              jobs={visibleJobs}
-              selectedJobId={selectedJobId}
-              updatingJobId={updatingJobId}
-              onSelectJob={(job) => setSelectedJobId(job.id)}
-              onStatusChange={(job, status) => void handleStatusChange(job, status)}
+              leads={visibleLeads}
+              selectedLeadId={selectedLeadId}
+              updatingLeadId={updatingLeadId}
+              onSelectLead={(lead) => setSelectedLeadId(lead.id)}
+              onStatusChange={(lead, status) => void handleStatusChange(lead, status)}
             />
             <p className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
               {dictionary.dashboard.showingCount
-                .replace("{visible}", String(visibleJobs.length))
-                .replace("{total}", String(jobs.length))
+                .replace("{visible}", String(visibleLeads.length))
+                .replace("{total}", String(leads.length))
                 .replace("{unit}", countUnit)}
             </p>
           </>
@@ -137,10 +151,10 @@ function JobsDashboardContent({ loadingLabel }: { loadingLabel: string }) {
       </section>
 
       <JobDetailDrawer
-        job={selectedJob}
-        updating={selectedJob !== null && updatingJobId === selectedJob.id}
-        onClose={() => setSelectedJobId(null)}
-        onStatusChange={(job, status) => void handleStatusChange(job, status)}
+        lead={selectedLead}
+        updating={selectedLead !== null && updatingLeadId === selectedLead.id}
+        onClose={() => setSelectedLeadId(null)}
+        onStatusChange={handleStatusChange}
       />
     </div>
   );

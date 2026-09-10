@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
+import { DashboardForbidden } from "@/components/dashboard-forbidden";
 import JobsDashboard from "@/components/jobs-dashboard";
 import { SiteHeader } from "@/components/site-header";
+import { getDashboardAccess } from "@/lib/auth/dashboard-access";
 import { isLocale, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
 
@@ -38,10 +40,15 @@ export default async function DashboardPage({
 
   const locale: Locale = lang;
   const dictionary = getDictionary(locale);
+  const access = await getDashboardAccess();
+
+  if (access.kind === "unauthenticated") {
+    redirect(`/${locale}/login?returnTo=${encodeURIComponent(`/${locale}/dashboard`)}`);
+  }
 
   return (
     <div className="flex flex-1 flex-col bg-slate-50 text-slate-900">
-      <SiteHeader locale={locale} dictionary={dictionary} variant="dashboard" />
+      <SiteHeader locale={locale} dictionary={dictionary} variant="dashboard" showLogout />
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
         <div className="mb-6">
@@ -51,7 +58,11 @@ export default async function DashboardPage({
           <p className="mt-1 text-sm text-slate-500">{dictionary.dashboard.subtitle}</p>
         </div>
 
-        <JobsDashboard />
+        {access.kind === "forbidden" ? (
+          <DashboardForbidden dictionary={dictionary} />
+        ) : (
+          <JobsDashboard />
+        )}
       </main>
     </div>
   );

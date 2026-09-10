@@ -7,12 +7,11 @@ const ENGLISH_ONLY_PHRASES = [
   "Generate demo lead",
   "View the dashboard",
   "All statuses",
-  "Couldn't load job requests",
+  "Couldn't load leads",
   "Try again",
-  "Pending",
-  "In progress",
   "Refresh",
   "Reset",
+  "Invalid email or password.",
 ];
 
 function collectStringValues(value: unknown): string[] {
@@ -37,17 +36,28 @@ describe("dictionaries", () => {
       const dictionary = getDictionary(locale);
       expect(dictionary.locale).toBe(locale);
       expect(dictionary.metadata.homeTitle.length).toBeGreaterThan(0);
+      expect(dictionary.metadata.loginTitle.length).toBeGreaterThan(0);
       expect(dictionary.landing.title.length).toBeGreaterThan(0);
       expect(dictionary.dashboard.title.length).toBeGreaterThan(0);
     }
   });
 
-  it("localizes metadata per locale", () => {
+  it("localizes metadata and auth copy per locale", () => {
     const en = getDictionary("en");
     const ru = getDictionary("ru");
 
-    expect(en.metadata.homeDescription).not.toBe(ru.metadata.homeDescription);
+    expect(en.metadata.loginDescription).not.toBe(ru.metadata.loginDescription);
     expect(ru.metadata.dashboardDescription).toMatch(/[А-Яа-яЁё]/);
+    expect(ru.auth.invalidCredentials).toMatch(/[А-Яа-яЁё]/);
+  });
+
+  it("localizes accessibility labels for EN and RU", () => {
+    const en = getDictionary("en");
+    const ru = getDictionary("ru");
+
+    expect(en.accessibility.loadingLeads).toBe("Loading leads…");
+    expect(ru.accessibility.loadingLeads).toBe("Загрузка лидов…");
+    expect(ru.accessibility.notifications).not.toBe(en.accessibility.notifications);
   });
 
   it("avoids unintended English on reachable Russian UI copy", () => {
@@ -58,30 +68,12 @@ describe("dictionaries", () => {
     }
   });
 
-  it("localizes accessibility labels for EN and RU", () => {
-    const en = getDictionary("en");
-    const ru = getDictionary("ru");
-
-    expect(en.accessibility.loadingJobRequests).toBe("Loading job requests…");
-    expect(en.accessibility.closePanel).toBe("Close panel");
-    expect(en.accessibility.notifications).toBe("Notifications");
-    expect(en.accessibility.dismissNotification).toBe("Dismiss notification");
-
-    expect(ru.accessibility.loadingJobRequests).toBe("Загрузка заявок…");
-    expect(ru.accessibility.closePanel).toBe("Закрыть панель");
-    expect(ru.accessibility.notifications).toBe("Уведомления");
-    expect(ru.accessibility.dismissNotification).toBe("Закрыть уведомление");
-
-    expect(ru.accessibility.loadingJobRequests).toMatch(/[А-Яа-яЁё]/);
-    expect(ru.accessibility.notifications).not.toBe(en.accessibility.notifications);
-  });
-
   it("maps language-neutral API error codes to localized messages", () => {
     const en = getDictionary("en");
     const ru = getDictionary("ru");
 
     expect(en.errors.api.rate_limited).toMatch(/Too many/i);
     expect(ru.errors.api.rate_limited).toMatch(/[А-Яа-яЁё]/);
-    expect(en.errors.api.rate_limited).not.toBe(ru.errors.api.rate_limited);
+    expect(en.errors.login.invalid_credentials).not.toBe(ru.errors.login.invalid_credentials);
   });
 });

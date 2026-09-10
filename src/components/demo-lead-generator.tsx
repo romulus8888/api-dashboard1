@@ -50,7 +50,7 @@ function DemoLeadGeneratorForm() {
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const labels = dictionary.demo;
-  const priorityLabels = dictionary.jobs.priority;
+  const priorityLabels = dictionary.leads.priority;
 
   async function handleGenerate() {
     setSubmitError(null);

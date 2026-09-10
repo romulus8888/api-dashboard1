@@ -2,42 +2,42 @@ import { CheckCircle2, CircleDashed, Inbox, Timer } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocaleContext } from "@/i18n/locale-provider";
+import type { AdminLeadListItem } from "@/lib/admin/admin-leads-client";
 import { cn } from "@/lib/utils";
-import type { Job } from "@/types/job";
 
 type StatIcon = React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 
 export interface JobsStatsProps {
-  jobs: Job[];
+  leads: AdminLeadListItem[];
   loading: boolean;
 }
 
-export function JobsStats({ jobs, loading }: JobsStatsProps) {
+export function JobsStats({ leads, loading }: JobsStatsProps) {
   const { dictionary } = useLocaleContext();
-  const labels = dictionary.jobs.stats;
+  const labels = dictionary.leads.stats;
 
   const cards: { label: string; value: number; icon: StatIcon; accent: string }[] = [
     {
       label: labels.total,
-      value: jobs.length,
+      value: leads.length,
       icon: Inbox,
       accent: "text-slate-500 bg-slate-100",
     },
     {
-      label: labels.pending,
-      value: jobs.filter((job) => job.status === "pending").length,
+      label: labels.new,
+      value: leads.filter((lead) => lead.status === "new").length,
       icon: CircleDashed,
       accent: "text-amber-600 bg-amber-50",
     },
     {
       label: labels.inProgress,
-      value: jobs.filter((job) => job.status === "in_progress").length,
+      value: leads.filter((lead) => lead.status === "in_progress").length,
       icon: Timer,
       accent: "text-indigo-600 bg-indigo-50",
     },
     {
-      label: labels.completed,
-      value: jobs.filter((job) => job.status === "completed").length,
+      label: labels.won,
+      value: leads.filter((lead) => lead.status === "won").length,
       icon: CheckCircle2,
       accent: "text-emerald-600 bg-emerald-50",
     },

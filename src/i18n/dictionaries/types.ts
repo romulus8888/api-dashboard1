@@ -1,6 +1,8 @@
 import type { Locale } from "@/i18n/config";
 import type { DemoApiErrorCode } from "@/types/api-errors";
-import type { JobPriority, JobStatus } from "@/types/job";
+import type { LeadPriority, LeadStatus } from "@/types/lead";
+
+export type LoginErrorCode = "invalid_credentials" | "invalid_payload" | "auth_not_configured";
 
 export interface Dictionary {
   locale: Locale;
@@ -10,6 +12,8 @@ export interface Dictionary {
     homeDescription: string;
     dashboardTitle: string;
     dashboardDescription: string;
+    loginTitle: string;
+    loginDescription: string;
     titleTemplate: string;
   };
   common: {
@@ -21,6 +25,7 @@ export interface Dictionary {
     localeSwitcherLabel: string;
     localeEn: string;
     localeRu: string;
+    logout: string;
   };
   prototype: {
     bannerStrong: string;
@@ -62,6 +67,17 @@ export interface Dictionary {
     toastErrorTitle: string;
     retryAfterSeconds: string;
   };
+  auth: {
+    emailLabel: string;
+    passwordLabel: string;
+    signIn: string;
+    signingIn: string;
+    invalidCredentials: string;
+    invalidPayload: string;
+    authNotConfigured: string;
+    forbiddenTitle: string;
+    forbiddenDescription: string;
+  };
   dashboard: {
     title: string;
     subtitle: string;
@@ -69,16 +85,16 @@ export interface Dictionary {
     showingCountSingular: string;
     showingCountPlural: string;
   };
-  jobs: {
+  leads: {
     stats: {
       total: string;
-      pending: string;
+      new: string;
       inProgress: string;
-      completed: string;
+      won: string;
     };
     table: {
-      job: string;
-      client: string;
+      lead: string;
+      contact: string;
       priority: string;
       budget: string;
       created: string;
@@ -109,6 +125,8 @@ export interface Dictionary {
       title: string;
       tryAgain: string;
       loadFailed: string;
+      sessionExpired: string;
+      forbidden: string;
       updateFailed: string;
       refreshFailed: string;
     };
@@ -120,12 +138,13 @@ export interface Dictionary {
       saving: string;
       changesSaveImmediately: string;
       details: string;
-      clientEmail: string;
+      contactEmail: string;
+      contactName: string;
       budget: string;
       created: string;
-      requestId: string;
+      leadId: string;
       startProgress: string;
-      markCompleted: string;
+      markContacted: string;
     };
     toasts: {
       statusUpdatedTitle: string;
@@ -133,14 +152,15 @@ export interface Dictionary {
       statusUpdateFailedTitle: string;
       refreshFailedTitle: string;
     };
-    status: Record<JobStatus, string>;
-    priority: Record<JobPriority, string>;
+    status: Record<LeadStatus, string>;
+    priority: Record<LeadPriority, string>;
   };
   errors: {
     api: Record<DemoApiErrorCode, string>;
+    login: Record<LoginErrorCode, string>;
   };
   accessibility: {
-    loadingJobRequests: string;
+    loadingLeads: string;
     closePanel: string;
     notifications: string;
     dismissNotification: string;

@@ -5,35 +5,36 @@ import { JobStatusSelect } from "@/components/job-status-select";
 import type { Dictionary } from "@/i18n/dictionaries/types";
 import { useLocaleContext } from "@/i18n/locale-provider";
 import type { Locale } from "@/i18n/config";
+import type { AdminLeadListItem } from "@/lib/admin/admin-leads-client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Job, JobStatus } from "@/types/job";
+import type { LeadStatus } from "@/types/lead";
 
 export interface JobsTableProps {
-  jobs: Job[];
-  selectedJobId: string | null;
-  updatingJobId: string | null;
-  onSelectJob: (job: Job) => void;
-  onStatusChange: (job: Job, status: JobStatus) => void;
+  leads: AdminLeadListItem[];
+  selectedLeadId: string | null;
+  updatingLeadId: string | null;
+  onSelectLead: (lead: AdminLeadListItem) => void;
+  onStatusChange: (lead: AdminLeadListItem, status: LeadStatus) => void;
 }
 
 export function JobsTable({
-  jobs,
-  selectedJobId,
-  updatingJobId,
-  onSelectJob,
+  leads,
+  selectedLeadId,
+  updatingLeadId,
+  onSelectLead,
   onStatusChange,
 }: JobsTableProps) {
   const { locale, dictionary } = useLocaleContext();
-  const labels = dictionary.jobs.table;
+  const labels = dictionary.leads.table;
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[64rem] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold tracking-wider text-slate-500 uppercase">
-            <th scope="col" className="px-4 py-3">{labels.job}</th>
-            <th scope="col" className="px-4 py-3">{labels.client}</th>
+            <th scope="col" className="px-4 py-3">{labels.lead}</th>
+            <th scope="col" className="px-4 py-3">{labels.contact}</th>
             <th scope="col" className="px-4 py-3">{labels.priority}</th>
             <th scope="col" className="px-4 py-3 text-right">{labels.budget}</th>
             <th scope="col" className="px-4 py-3">{labels.created}</th>
@@ -44,15 +45,15 @@ export function JobsTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {jobs.map((job) => (
+          {leads.map((lead) => (
             <JobsTableRow
-              key={job.id}
-              job={job}
+              key={lead.id}
+              lead={lead}
               locale={locale}
               labels={labels}
-              selected={job.id === selectedJobId}
-              updating={job.id === updatingJobId}
-              onSelectJob={onSelectJob}
+              selected={lead.id === selectedLeadId}
+              updating={lead.id === updatingLeadId}
+              onSelectLead={onSelectLead}
               onStatusChange={onStatusChange}
             />
           ))}
@@ -63,27 +64,27 @@ export function JobsTable({
 }
 
 interface JobsTableRowProps {
-  job: Job;
+  lead: AdminLeadListItem;
   locale: Locale;
-  labels: Dictionary["jobs"]["table"];
+  labels: Dictionary["leads"]["table"];
   selected: boolean;
   updating: boolean;
-  onSelectJob: (job: Job) => void;
-  onStatusChange: (job: Job, status: JobStatus) => void;
+  onSelectLead: (lead: AdminLeadListItem) => void;
+  onStatusChange: (lead: AdminLeadListItem, status: LeadStatus) => void;
 }
 
 function JobsTableRow({
-  job,
+  lead,
   locale,
   labels,
   selected,
   updating,
-  onSelectJob,
+  onSelectLead,
   onStatusChange,
 }: JobsTableRowProps) {
   return (
     <tr
-      onClick={() => onSelectJob(job)}
+      onClick={() => onSelectLead(lead)}
       className={cn(
         "cursor-pointer transition hover:bg-slate-50",
         selected && "bg-indigo-50/60 hover:bg-indigo-50/60",
@@ -94,34 +95,36 @@ function JobsTableRow({
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            onSelectJob(job);
+            onSelectLead(lead);
           }}
           className="rounded text-left font-medium text-slate-900 transition hover:text-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
         >
-          {job.title}
+          {lead.title}
         </button>
-        <p className="mt-0.5 line-clamp-2 text-slate-500">{job.description}</p>
       </td>
-      <td className="px-4 py-3.5 align-top text-slate-600">{job.client_email}</td>
+      <td className="px-4 py-3.5 align-top text-slate-600">
+        <div>{lead.contact_name}</div>
+        <div className="text-slate-500">{lead.contact_email}</div>
+      </td>
       <td className="px-4 py-3.5 align-top">
-        <PriorityBadge priority={job.priority} />
+        <PriorityBadge priority={lead.priority} />
       </td>
       <td className="px-4 py-3.5 text-right align-top font-medium text-slate-900 tabular-nums">
-        {formatCurrency(job.budget, locale, "USD")}
+        {formatCurrency(lead.budget_amount, locale, lead.budget_currency)}
       </td>
       <td className="px-4 py-3.5 align-top whitespace-nowrap text-slate-500">
-        {formatDate(job.created_at, locale)}
+        {formatDate(lead.created_at, locale)}
       </td>
       <td className="px-4 py-3.5 align-top">
         <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
           <JobStatusSelect
-            id={`status-${job.id}`}
-            label={labels.statusFor.replace("{title}", job.title)}
+            id={`status-${lead.id}`}
+            label={labels.statusFor.replace("{title}", lead.title)}
             hideLabel
             size="sm"
-            value={job.status}
+            value={lead.status}
             disabled={updating}
-            onChange={(status) => onStatusChange(job, status)}
+            onChange={(status) => onStatusChange(lead, status)}
           />
           {updating ? (
             <Loader2

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, LayoutDashboard, Sparkles } from "lucide-react";
 
 import { LocaleSwitcher } from "@/components/locale-switcher";
+import { LogoutButton } from "@/components/logout-button";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries/types";
 
@@ -9,9 +10,15 @@ interface SiteHeaderProps {
   locale: Locale;
   dictionary: Dictionary;
   variant?: "landing" | "dashboard";
+  showLogout?: boolean;
 }
 
-export function SiteHeader({ locale, dictionary, variant = "landing" }: SiteHeaderProps) {
+export function SiteHeader({
+  locale,
+  dictionary,
+  variant = "landing",
+  showLogout = false,
+}: SiteHeaderProps) {
   const homeHref = `/${locale}`;
   const dashboardHref = `/${locale}/dashboard`;
 
@@ -39,7 +46,9 @@ export function SiteHeader({ locale, dictionary, variant = "landing" }: SiteHead
 
         <div className="flex items-center gap-3">
           <LocaleSwitcher />
-          {variant === "landing" ? (
+          {showLogout ? (
+            <LogoutButton />
+          ) : variant === "landing" ? (
             <Link
               href={dashboardHref}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"

@@ -1,20 +1,19 @@
 import { STATUS_TONES } from "@/components/job-badges";
 import { Select, type SelectOption, type SelectSize } from "@/components/ui/select";
 import { useLocaleContext } from "@/i18n/locale-provider";
-import { JOB_STATUSES, type JobStatus } from "@/types/job";
+import { LEAD_STATUSES, type LeadStatus } from "@/types/lead";
 
 export interface JobStatusSelectProps {
   id: string;
   label: string;
-  value: JobStatus;
-  onChange: (status: JobStatus) => void;
+  value: LeadStatus;
+  onChange: (status: LeadStatus) => void;
   hideLabel?: boolean;
   disabled?: boolean;
   size?: SelectSize;
   className?: string;
 }
 
-/** Status picker tinted to match the current status, shared by the table row and the detail drawer. */
 export function JobStatusSelect({
   id,
   label,
@@ -27,9 +26,9 @@ export function JobStatusSelect({
 }: JobStatusSelectProps) {
   const { dictionary } = useLocaleContext();
 
-  const statusOptions: SelectOption<JobStatus>[] = JOB_STATUSES.map((status) => ({
+  const statusOptions: SelectOption<LeadStatus>[] = LEAD_STATUSES.map((status) => ({
     value: status,
-    label: dictionary.jobs.status[status],
+    label: dictionary.leads.status[status],
   }));
 
   return (
