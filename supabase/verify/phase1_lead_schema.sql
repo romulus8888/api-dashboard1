@@ -481,11 +481,11 @@ begin
     raise exception 'cleared context must default to sql, got %', v_change_source;
   end if;
 
-  perform set_config('lead.status_changed_by', gen_random_uuid()::text, true);
-  perform set_config('lead.status_change_source', 'rpc', true);
-
   v_caught := false;
   begin
+    perform set_config('lead.status_changed_by', gen_random_uuid()::text, true);
+    perform set_config('lead.status_change_source', 'rpc', true);
+
     update public.leads
     set status = 'archived'
     where id = v_lead_id;
@@ -501,6 +501,8 @@ begin
   if not v_caught then
     raise exception 'failed status write with invalid actor GUC must error';
   end if;
+
+  perform public.clear_lead_status_attribution_gucs();
 
   insert into public.leads (
     source, contact_name, contact_email, title
@@ -727,6 +729,21 @@ begin
 
   if not v_caught then
     raise exception 'lead_comments.author_id must be immutable after insert';
+  end if;
+
+  update public.lead_comments
+  set body = 'Updated cascade test comment body'
+  where lead_id = v_lead_id
+    and author_id = v_primary_operator_id;
+
+  if not exists (
+    select 1
+    from public.lead_comments
+    where lead_id = v_lead_id
+      and author_id = v_primary_operator_id
+      and body = 'Updated cascade test comment body'
+  ) then
+    raise exception 'lead_comments.body update must succeed when author_id is unchanged';
   end if;
 
   insert into public.lead_processing_audit (
