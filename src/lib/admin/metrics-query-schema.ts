@@ -1,14 +1,22 @@
 import { z } from "zod";
 
-const isoDateTimeSchema = z.string().datetime({ offset: true });
-
 export const MAX_METRICS_RANGE_DAYS = 366;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+const CANONICAL_UTC_ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+export const canonicalUtcTimestampSchema = z
+  .string()
+  .regex(CANONICAL_UTC_ISO_PATTERN, "Timestamp must be canonical UTC ISO ending with Z.")
+  .refine(
+    (value) => new Date(value).toISOString() === value,
+    "Timestamp must be canonical UTC ISO ending with Z.",
+  );
+
 export const metricsQuerySchema = z
   .object({
-    from: isoDateTimeSchema.optional(),
-    to: isoDateTimeSchema.optional(),
+    from: canonicalUtcTimestampSchema.optional(),
+    to: canonicalUtcTimestampSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

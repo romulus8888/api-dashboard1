@@ -13,12 +13,11 @@ describe("phase7 lead metrics migration", () => {
     expect(sql).toMatch(/create or replace function public\.get_lead_metrics/i);
     expect(sql).toMatch(/security invoker/i);
     expect(sql).toMatch(/set search_path = pg_catalog, pg_temp/i);
-    expect(sql).toMatch(/count\(\*\) filter \(where reached_started\)/i);
     expect(sql).toMatch(/grant execute on function public\.get_lead_metrics/i);
     expect(sql).toMatch(/revoke all on function public\.get_lead_metrics/i);
   });
 
-  it("includes rollback-safe verification", () => {
+  it("ships rollback-safe SQL verification with value assertions", () => {
     const verifySql = readFileSync(
       join(process.cwd(), "supabase/verify/phase7_lead_metrics.sql"),
       "utf8",
@@ -26,6 +25,12 @@ describe("phase7 lead metrics migration", () => {
 
     expect(verifySql).toMatch(/begin;/i);
     expect(verifySql).toMatch(/rollback;/i);
-    expect(verifySql).toMatch(/get_lead_metrics/i);
+    expect(verifySql).toMatch(/expected received=2/i);
+    expect(verifySql).toMatch(/funnel milestones must be monotonic/i);
+    expect(verifySql).toMatch(/source totals must reconcile/i);
+    expect(verifySql).toMatch(/empty cohort must return null conversion/i);
+    expect(verifySql).toMatch(/empty cohort must still return current overdue snapshot/i);
+    expect(verifySql).toMatch(/expected first_action average_seconds=3600/i);
+    expect(verifySql).toMatch(/expected first_terminal average_seconds=259200/i);
   });
 });

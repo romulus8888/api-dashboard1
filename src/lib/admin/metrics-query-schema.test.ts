@@ -11,8 +11,8 @@ describe("metricsQuerySchema", () => {
     const now = new Date("2026-09-11T12:00:00.000Z");
     const range = resolveMetricsRange({}, now);
 
-    expect(range.to).toBe(now.toISOString());
-    expect(Date.parse(range.from)).toBe(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    expect(range.to).toBe("2026-09-11T12:00:00.000Z");
+    expect(range.from).toBe("2026-08-12T12:00:00.000Z");
   });
 
   it("rejects partial ranges, inverted ranges, and ranges over 366 days", () => {
@@ -33,12 +33,42 @@ describe("metricsQuerySchema", () => {
     expect(() => metricsQuerySchema.parse({ from, to })).toThrow();
   });
 
-  it("accepts a valid UTC range", () => {
+  it("accepts only canonical UTC timestamps ending in Z", () => {
     const parsed = metricsQuerySchema.parse({
       from: "2026-08-01T00:00:00.000Z",
       to: "2026-09-01T00:00:00.000Z",
     });
 
     expect(parsed.from).toBe("2026-08-01T00:00:00.000Z");
+  });
+
+  it("rejects non-zero offsets, date-only values, and malformed timestamps", () => {
+    expect(() =>
+      metricsQuerySchema.parse({
+        from: "2026-08-01T00:00:00.000+00:00",
+        to: "2026-09-01T00:00:00.000Z",
+      }),
+    ).toThrow();
+
+    expect(() =>
+      metricsQuerySchema.parse({
+        from: "2026-08-01",
+        to: "2026-09-01T00:00:00.000Z",
+      }),
+    ).toThrow();
+
+    expect(() =>
+      metricsQuerySchema.parse({
+        from: "2026-08-01T00:00:00Z",
+        to: "2026-09-01T00:00:00.000Z",
+      }),
+    ).toThrow();
+
+    expect(() =>
+      metricsQuerySchema.parse({
+        from: "not-a-date",
+        to: "2026-09-01T00:00:00.000Z",
+      }),
+    ).toThrow();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Clock3, Layers3 } from "lucide-react";
+import { AlertTriangle, Clock3, Layers3 } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocaleContext } from "@/i18n/locale-provider";
@@ -56,19 +56,11 @@ export function JobsMetrics({ metrics, loading, loadError, onRetry }: JobsMetric
     );
   }
 
-  if (!metrics || metrics.funnel.received === 0) {
-    return (
-      <section
-        aria-label={labels.title}
-        className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center shadow-sm"
-      >
-        <BarChart3 className="mx-auto size-8 text-slate-300" aria-hidden="true" />
-        <h2 className="mt-3 text-base font-semibold text-slate-900">{labels.emptyTitle}</h2>
-        <p className="mt-1 text-sm text-slate-500">{labels.emptyDescription}</p>
-      </section>
-    );
+  if (!metrics) {
+    return null;
   }
 
+  const cohortEmpty = metrics.funnel.received === 0;
   const rangeLabel = formatMetricsDateRange(metrics.range.from, metrics.range.to, locale);
 
   const funnelRows = FUNNEL_STAGES.map((stage) => ({
@@ -109,30 +101,37 @@ export function JobsMetrics({ metrics, loading, loadError, onRetry }: JobsMetric
             <Layers3 className="size-4 text-indigo-600" aria-hidden="true" />
             <h3 className="text-sm font-semibold text-slate-900">{labels.funnel.title}</h3>
           </div>
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                <th scope="col" className="pb-2">{labels.funnel.stage}</th>
-                <th scope="col" className="pb-2 text-right">{labels.funnel.count}</th>
-                <th scope="col" className="pb-2 text-right">{labels.funnel.conversion}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {funnelRows.map((row) => (
-                <tr key={row.stage}>
-                  <th scope="row" className="py-2.5 font-medium text-slate-800">{row.label}</th>
-                  <td className="py-2.5 text-right tabular-nums text-slate-900">
-                    {formatInteger(row.count, locale)}
-                  </td>
-                  <td className="py-2.5 text-right tabular-nums text-slate-600">
-                    {row.conversion === null
-                      ? "—"
-                      : formatPercent(row.conversion, locale)}
-                  </td>
+          {cohortEmpty ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+              <p className="text-sm font-medium text-slate-800">{labels.emptyTitle}</p>
+              <p className="mt-1 text-sm text-slate-500">{labels.emptyDescription}</p>
+            </div>
+          ) : (
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  <th scope="col" className="pb-2">{labels.funnel.stage}</th>
+                  <th scope="col" className="pb-2 text-right">{labels.funnel.count}</th>
+                  <th scope="col" className="pb-2 text-right">{labels.funnel.conversion}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {funnelRows.map((row) => (
+                  <tr key={row.stage}>
+                    <th scope="row" className="py-2.5 font-medium text-slate-800">{row.label}</th>
+                    <td className="py-2.5 text-right tabular-nums text-slate-900">
+                      {formatInteger(row.count, locale)}
+                    </td>
+                    <td className="py-2.5 text-right tabular-nums text-slate-600">
+                      {row.conversion === null
+                        ? "—"
+                        : formatPercent(row.conversion, locale)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -171,7 +170,7 @@ export function JobsMetrics({ metrics, loading, loadError, onRetry }: JobsMetric
         </div>
       </div>
 
-      {metrics.sources.length > 0 ? (
+      {!cohortEmpty && metrics.sources.length > 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-4 text-sm font-semibold text-slate-900">{labels.sources.title}</h3>
           <table className="w-full text-left text-sm">

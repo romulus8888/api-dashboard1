@@ -94,4 +94,21 @@ describe("phase 7 admin metrics handler", () => {
     expect(response.status).toBe(400);
     expect(createServiceSupabaseClientMock).not.toHaveBeenCalled();
   });
+
+  it("rejects non-canonical UTC timestamps", async () => {
+    const offsetResponse = await handleGetLeadMetrics(
+      new Request(
+        "http://localhost/api/admin/metrics?from=2026-08-01T00:00:00.000%2B00:00&to=2026-09-01T00:00:00.000Z",
+      ),
+    );
+    const dateOnlyResponse = await handleGetLeadMetrics(
+      new Request(
+        "http://localhost/api/admin/metrics?from=2026-08-01&to=2026-09-01T00:00:00.000Z",
+      ),
+    );
+
+    expect(offsetResponse.status).toBe(400);
+    expect(dateOnlyResponse.status).toBe(400);
+    expect(createServiceSupabaseClientMock).not.toHaveBeenCalled();
+  });
 });

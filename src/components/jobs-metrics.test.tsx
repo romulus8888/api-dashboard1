@@ -31,6 +31,28 @@ const metrics: LeadMetrics = {
   overdue: { first_response: 1, next_action: 2, total: 3 },
 };
 
+const emptyCohortMetrics: LeadMetrics = {
+  range: {
+    from: "2027-01-01T00:00:00.000Z",
+    to: "2027-01-08T00:00:00.000Z",
+    as_of: "2027-01-10T12:00:00.000Z",
+  },
+  funnel: { received: 0, started: 0, contacted: 0, qualified: 0, won: 0 },
+  conversion: {
+    overall: null,
+    received_to_started: null,
+    started_to_contacted: null,
+    contacted_to_qualified: null,
+    qualified_to_won: null,
+  },
+  sources: [],
+  timing: {
+    first_action: { average_seconds: null, median_seconds: null, sample_size: 0 },
+    first_terminal: { average_seconds: null, median_seconds: null, sample_size: 0 },
+  },
+  overdue: { first_response: 1, next_action: 2, total: 2 },
+};
+
 describe("JobsMetrics", () => {
   it("renders localized EN metrics tables", () => {
     render(
@@ -44,14 +66,18 @@ describe("JobsMetrics", () => {
     expect(screen.getByText(en.leads.metrics.sources.title)).toBeTruthy();
   });
 
-  it("renders localized RU empty state", () => {
+  it("shows cohort-empty state inside the funnel while still rendering overdue", () => {
     render(
       <LocaleProvider locale="ru" dictionary={ru}>
-        <JobsMetrics metrics={null} loading={false} loadError={null} onRetry={() => {}} />
+        <JobsMetrics metrics={emptyCohortMetrics} loading={false} loadError={null} onRetry={() => {}} />
       </LocaleProvider>,
     );
 
     expect(screen.getByText(ru.leads.metrics.emptyTitle)).toBeTruthy();
+    expect(screen.getByText(ru.leads.metrics.overdue.title)).toBeTruthy();
+    expect(screen.getAllByText(ru.leads.metrics.timing.noSamples).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("columnheader", { name: ru.leads.metrics.funnel.stage })).toBeNull();
+    expect(screen.getByText(`${ru.leads.metrics.conversion.overall}: —`)).toBeTruthy();
   });
 
   it("shows API failure copy", () => {
