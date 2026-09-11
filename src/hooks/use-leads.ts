@@ -5,7 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AdminLeadsApiError,
   fetchAdminLeads,
+  patchAdminLead,
+  type AdminLeadDetail,
   type AdminLeadListItem,
+  type AdminLeadPatchInput,
   updateAdminLeadStatus,
 } from "@/lib/admin/admin-leads-client";
 import { isAdminSessionExpired } from "@/lib/auth/admin-session-expiry";
@@ -23,10 +26,13 @@ export interface UseLeadsResult {
   refreshing: boolean;
   loadError: LeadsLoadErrorCode | null;
   updatingLeadId: string | null;
+  patchingLeadId: string | null;
   clearLoadedLeads: () => void;
   reload: () => void;
   refresh: () => Promise<void>;
-  updateStatus: (lead: AdminLeadListItem, status: LeadStatus) => Promise<void>;
+  updateStatus: (lead: AdminLeadListItem, status: LeadStatus, reason?: string) => Promise<void>;
+  patchLead: (lead: AdminLeadListItem, patch: AdminLeadPatchInput) => Promise<AdminLeadDetail>;
+  replaceLead: (lead: AdminLeadDetail) => void;
 }
 
 function toLoadErrorCode(error: unknown): LeadsLoadErrorCode {
@@ -37,12 +43,34 @@ function toLoadErrorCode(error: unknown): LeadsLoadErrorCode {
   return "load_failed";
 }
 
+function toListItem(lead: AdminLeadDetail): AdminLeadListItem {
+  return {
+    id: lead.id,
+    status: lead.status,
+    priority: lead.priority,
+    source: lead.source,
+    locale: lead.locale,
+    contact_name: lead.contact_name,
+    contact_email: lead.contact_email,
+    title: lead.title,
+    budget_amount: lead.budget_amount,
+    budget_currency: lead.budget_currency,
+    owner_id: lead.owner_id,
+    next_action_at: lead.next_action_at,
+    first_response_due_at: lead.first_response_due_at,
+    is_synthetic: lead.is_synthetic,
+    created_at: lead.created_at,
+    updated_at: lead.updated_at,
+  };
+}
+
 export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsResult {
   const [leads, setLeads] = useState<AdminLeadListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<LeadsLoadErrorCode | null>(null);
   const [updatingLeadId, setUpdatingLeadId] = useState<string | null>(null);
+  const [patchingLeadId, setPatchingLeadId] = useState<string | null>(null);
   const [loadToken, setLoadToken] = useState(0);
   const isMounted = useRef(true);
   const onSessionExpiredRef = useRef(onSessionExpired);
@@ -62,10 +90,16 @@ export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsRe
     setLeads([]);
     setLoadError(null);
     setUpdatingLeadId(null);
+    setPatchingLeadId(null);
   }, []);
 
   const notifySessionExpired = useCallback(() => {
     onSessionExpiredRef.current?.();
+  }, []);
+
+  const replaceLead = useCallback((lead: AdminLeadDetail) => {
+    const listItem = toListItem(lead);
+    setLeads((current) => current.map((item) => (item.id === lead.id ? listItem : item)));
   }, []);
 
   useEffect(() => {
@@ -128,14 +162,21 @@ export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsRe
     setLeads((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
   }, []);
 
+  const patchLeadFields = useCallback((id: string, patch: AdminLeadPatchInput) => {
+    setLeads((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    );
+  }, []);
+
   const updateStatus = useCallback(
-    async (lead: AdminLeadListItem, status: LeadStatus) => {
+    async (lead: AdminLeadListItem, status: LeadStatus, reason?: string) => {
       const previousStatus = lead.status;
       setUpdatingLeadId(lead.id);
       patchStatus(lead.id, status);
 
       try {
-        await updateAdminLeadStatus(lead.id, status);
+        const updated = await updateAdminLeadStatus(lead.id, status, reason);
+        if (isMounted.current) replaceLead(updated);
       } catch (error) {
         patchStatus(lead.id, previousStatus);
 
@@ -148,7 +189,35 @@ export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsRe
         if (isMounted.current) setUpdatingLeadId(null);
       }
     },
-    [notifySessionExpired, patchStatus],
+    [notifySessionExpired, patchStatus, replaceLead],
+  );
+
+  const patchLead = useCallback(
+    async (lead: AdminLeadListItem, patch: AdminLeadPatchInput) => {
+      const previous = { ...lead };
+      setPatchingLeadId(lead.id);
+      patchLeadFields(lead.id, patch);
+
+      try {
+        const updated = await patchAdminLead(lead.id, {
+          ...patch,
+          updated_at: lead.updated_at,
+        });
+        if (isMounted.current) replaceLead(updated);
+        return updated;
+      } catch (error) {
+        patchLeadFields(lead.id, previous);
+
+        if (isMounted.current && isAdminSessionExpired(error)) {
+          notifySessionExpired();
+        }
+
+        throw error;
+      } finally {
+        if (isMounted.current) setPatchingLeadId(null);
+      }
+    },
+    [notifySessionExpired, patchLeadFields, replaceLead],
   );
 
   return {
@@ -157,9 +226,12 @@ export function useLeads({ onSessionExpired }: UseLeadsOptions = {}): UseLeadsRe
     refreshing,
     loadError,
     updatingLeadId,
+    patchingLeadId,
     clearLoadedLeads,
     reload,
     refresh,
     updateStatus,
+    patchLead,
+    replaceLead,
   };
 }

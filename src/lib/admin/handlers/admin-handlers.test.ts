@@ -149,12 +149,12 @@ describe("admin lead handlers", () => {
       error: null,
     });
 
+    const updateMock = vi.fn();
+
     createServiceSupabaseClientMock.mockReturnValue({
       rpc: rpcMock,
       from: vi.fn(() => ({
-        update: vi.fn(() => ({
-          eq: vi.fn().mockResolvedValue({ error: null }),
-        })),
+        update: updateMock,
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
             maybeSingle: vi.fn().mockResolvedValue({
@@ -188,6 +188,7 @@ describe("admin lead handlers", () => {
       p_changed_by: operatorContext.operator.id,
       p_reason: "Follow up",
     });
+    expect(updateMock).not.toHaveBeenCalled();
   });
 
   it("rejects cross-origin status mutations", async () => {

@@ -1,6 +1,6 @@
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { useLocaleContext } from "@/i18n/locale-provider";
-import type { LeadPriority, LeadStatus } from "@/types/lead";
+import type { LeadPriority, LeadSource, LeadStatus } from "@/types/lead";
 
 export const STATUS_TONES: Record<LeadStatus, BadgeTone> = {
   new: "amber",
@@ -34,4 +34,31 @@ export function PriorityBadge({ priority }: { priority: LeadPriority }) {
   const { dictionary } = useLocaleContext();
 
   return <Badge tone={PRIORITY_TONES[priority]}>{dictionary.leads.priority[priority]}</Badge>;
+}
+
+const SOURCE_TONES: Record<LeadSource, BadgeTone> = {
+  website: "indigo",
+  demo_seed: "slate",
+  manual: "slate",
+  telegram: "indigo",
+  email: "indigo",
+  max: "slate",
+};
+
+export function SourceBadge({ source }: { source: LeadSource }) {
+  const { dictionary } = useLocaleContext();
+
+  return <Badge tone={SOURCE_TONES[source]}>{dictionary.leads.source[source]}</Badge>;
+}
+
+export function SyntheticBadge() {
+  const { dictionary } = useLocaleContext();
+
+  return <Badge tone="slate">{dictionary.leads.syntheticBadge}</Badge>;
+}
+
+export function OverdueBadge() {
+  const { dictionary } = useLocaleContext();
+
+  return <Badge tone="rose" dot>{dictionary.leads.overdue}</Badge>;
 }

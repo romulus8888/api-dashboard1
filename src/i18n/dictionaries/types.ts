@@ -1,6 +1,6 @@
 import type { Locale } from "@/i18n/config";
 import type { DemoApiErrorCode } from "@/types/api-errors";
-import type { LeadPriority, LeadStatus } from "@/types/lead";
+import type { LeadPriority, LeadSource, LeadStatus } from "@/types/lead";
 
 export type LoginErrorCode = "invalid_credentials" | "invalid_payload" | "auth_not_configured";
 
@@ -92,12 +92,19 @@ export interface Dictionary {
       inProgress: string;
       won: string;
     };
+    syntheticBadge: string;
+    overdue: string;
+    unassigned: string;
     table: {
       lead: string;
       contact: string;
+      source: string;
+      owner: string;
       priority: string;
       budget: string;
       created: string;
+      firstResponse: string;
+      nextAction: string;
       status: string;
       viewDetails: string;
       savingStatus: string;
@@ -129,6 +136,9 @@ export interface Dictionary {
       forbidden: string;
       updateFailed: string;
       refreshFailed: string;
+      patchFailed: string;
+      conflict: string;
+      commentFailed: string;
     };
     detail: {
       submittedBy: string;
@@ -140,20 +150,45 @@ export interface Dictionary {
       details: string;
       contactEmail: string;
       contactName: string;
+      contactPhone: string;
       budget: string;
       created: string;
       leadId: string;
       startProgress: string;
       markContacted: string;
+      source: string;
+      owner: string;
+      noOwner: string;
+      priority: string;
+      firstResponseDue: string;
+      nextAction: string;
+      lossReason: string;
+      lossReasonPlaceholder: string;
+      assignment: string;
+      deadlines: string;
+      saveChanges: string;
+      history: string;
+      historyEmpty: string;
+      historyActorSystem: string;
+      comments: string;
+      commentsEmpty: string;
+      commentPlaceholder: string;
+      addComment: string;
+      postingComment: string;
+      syntheticNotice: string;
     };
     toasts: {
       statusUpdatedTitle: string;
       statusUpdatedDescription: string;
       statusUpdateFailedTitle: string;
       refreshFailedTitle: string;
+      leadUpdatedTitle: string;
+      leadUpdateFailedTitle: string;
+      commentAddedTitle: string;
     };
     status: Record<LeadStatus, string>;
     priority: Record<LeadPriority, string>;
+    source: Record<LeadSource, string>;
   };
   errors: {
     api: Record<DemoApiErrorCode, string>;

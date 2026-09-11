@@ -8,6 +8,7 @@ import {
   AdminLeadsApiError,
   fetchAdminLead,
   fetchAdminLeads,
+  fetchAdminOperators,
   updateAdminLeadStatus,
 } from "@/lib/admin/admin-leads-client";
 
@@ -37,6 +38,7 @@ vi.mock("@/lib/admin/admin-leads-client", async (importOriginal) => {
     ...actual,
     fetchAdminLeads: vi.fn(),
     fetchAdminLead: vi.fn(),
+    fetchAdminOperators: vi.fn(),
     updateAdminLeadStatus: vi.fn(),
   };
 });
@@ -75,7 +77,9 @@ describe("JobsDashboard session expiry", () => {
   beforeEach(() => {
     vi.mocked(fetchAdminLeads).mockReset();
     vi.mocked(fetchAdminLead).mockReset();
+    vi.mocked(fetchAdminOperators).mockReset();
     vi.mocked(updateAdminLeadStatus).mockReset();
+    vi.mocked(fetchAdminOperators).mockResolvedValue([]);
     mockReplace.mockReset();
     mockToast.mockReset();
   });

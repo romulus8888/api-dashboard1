@@ -58,6 +58,33 @@ export type SyntheticLead = Pick<
   | "created_at"
 >;
 
+export interface LeadStatusHistoryEntry {
+  id: string;
+  lead_id: string;
+  from_status: LeadStatus | null;
+  to_status: LeadStatus;
+  changed_by: string | null;
+  changed_by_name: string | null;
+  change_source: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface LeadComment {
+  id: string;
+  lead_id: string;
+  author_id: string;
+  author_name: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActiveOperatorOption {
+  id: string;
+  display_name: string;
+}
+
 export interface Lead {
   id: string;
   status: LeadStatus;
@@ -105,6 +132,13 @@ export type LeadInsert = {
   loss_reason?: string | null;
 };
 
+export type LeadOperationalUpdate = {
+  owner_id?: string | null;
+  priority?: LeadPriority;
+  next_action_at?: string | null;
+  first_response_due_at?: string | null;
+};
+
 interface DemoRateLimitBucketRow {
   bucket_key: string;
   window_start: string;
@@ -133,13 +167,33 @@ export interface DemoLeadSummary {
 
 type OperatorProfileRow = { [K in keyof OperatorProfile]: OperatorProfile[K] };
 
+type LeadStatusHistoryRow = {
+  id: string;
+  lead_id: string;
+  from_status: LeadStatus | null;
+  to_status: LeadStatus;
+  changed_by: string | null;
+  change_source: string;
+  reason: string | null;
+  created_at: string;
+};
+
+type LeadCommentRow = {
+  id: string;
+  lead_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export interface Database {
   public: {
     Tables: {
       leads: {
         Row: LeadRow;
         Insert: LeadInsert;
-        Update: Partial<LeadInsert>;
+        Update: Partial<LeadInsert> & LeadOperationalUpdate;
         Relationships: [];
       };
       operator_profiles: {
@@ -149,6 +203,38 @@ export interface Database {
         };
         Update: Partial<OperatorProfileRow>;
         Relationships: [];
+      };
+      lead_status_history: {
+        Row: LeadStatusHistoryRow;
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: "lead_status_history_changed_by_fkey";
+            columns: ["changed_by"];
+            isOneToOne: false;
+            referencedRelation: "operator_profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      lead_comments: {
+        Row: LeadCommentRow;
+        Insert: {
+          lead_id: string;
+          author_id: string;
+          body: string;
+        };
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: "lead_comments_author_id_fkey";
+            columns: ["author_id"];
+            isOneToOne: false;
+            referencedRelation: "operator_profiles";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       demo_rate_limit_buckets: {
         Row: DemoRateLimitBucket;

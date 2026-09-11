@@ -58,18 +58,6 @@ export async function handleTransitionLeadStatus(
       return adminInternalError();
     }
 
-    if (payload.status === "lost" && payload.reason) {
-      const { error: lossReasonError } = await service
-        .from("leads")
-        .update({ loss_reason: payload.reason })
-        .eq("id", parsedLeadId);
-
-      if (lossReasonError) {
-        logAdminError(LOG_SCOPE, "Failed to persist loss reason", lossReasonError);
-        return adminInternalError();
-      }
-    }
-
     const { data, error: fetchError } = await service
       .from("leads")
       .select(ADMIN_LEAD_DETAIL_COLUMNS)

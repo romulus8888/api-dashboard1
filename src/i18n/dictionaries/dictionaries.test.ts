@@ -68,6 +68,15 @@ describe("dictionaries", () => {
     }
   });
 
+  it("localizes operational lead management copy", () => {
+    const en = getDictionary("en");
+    const ru = getDictionary("ru");
+
+    expect(en.leads.source.demo_seed).toBe("Demo seed");
+    expect(ru.leads.detail.comments).toMatch(/[А-Яа-яЁё]/);
+    expect(ru.leads.overdue).toMatch(/[А-Яа-яЁё]/);
+  });
+
   it("maps language-neutral API error codes to localized messages", () => {
     const en = getDictionary("en");
     const ru = getDictionary("ru");

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
-import { AdminLeadsApiError, fetchAdminLeads, updateAdminLeadStatus } from "@/lib/admin/admin-leads-client";
+import {
+  AdminLeadsApiError,
+  fetchAdminLeads,
+  patchAdminLead,
+  updateAdminLeadStatus,
+} from "@/lib/admin/admin-leads-client";
 import { useLeads } from "@/hooks/use-leads";
 import type { LeadStatus } from "@/types/lead";
 
@@ -11,6 +16,7 @@ vi.mock("@/lib/admin/admin-leads-client", async (importOriginal) => {
     ...actual,
     fetchAdminLeads: vi.fn(),
     updateAdminLeadStatus: vi.fn(),
+    patchAdminLead: vi.fn(),
   };
 });
 
@@ -35,6 +41,7 @@ describe("useLeads", () => {
   beforeEach(() => {
     vi.mocked(fetchAdminLeads).mockReset();
     vi.mocked(updateAdminLeadStatus).mockReset();
+    vi.mocked(patchAdminLead).mockReset();
   });
 
   it("clears loaded leads and notifies once when the initial list expires", async () => {
@@ -107,6 +114,50 @@ describe("useLeads", () => {
 
     await waitFor(() => {
       expect(result.current.leads[0]?.status).toBe("new");
+    });
+    expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
+  it("rolls back and notifies when a session-expired patch fails", async () => {
+    const sessionError = new AdminLeadsApiError("session_expired", 401);
+    vi.mocked(fetchAdminLeads).mockResolvedValue([lead]);
+    vi.mocked(patchAdminLead).mockRejectedValue(sessionError);
+
+    const onSessionExpired = vi.fn();
+    const { result } = renderHook(() => useLeads({ onSessionExpired }));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await expect(
+      result.current.patchLead(lead, { priority: "high" }),
+    ).rejects.toBe(sessionError);
+
+    await waitFor(() => {
+      expect(result.current.leads[0]?.priority).toBe("medium");
+    });
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back optimistic priority on conflict without session expiry", async () => {
+    const conflictError = new AdminLeadsApiError("conflict", 409);
+    vi.mocked(fetchAdminLeads).mockResolvedValue([lead]);
+    vi.mocked(patchAdminLead).mockRejectedValue(conflictError);
+
+    const onSessionExpired = vi.fn();
+    const { result } = renderHook(() => useLeads({ onSessionExpired }));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await expect(
+      result.current.patchLead(lead, { priority: "high" }),
+    ).rejects.toBe(conflictError);
+
+    await waitFor(() => {
+      expect(result.current.leads[0]?.priority).toBe("medium");
     });
     expect(onSessionExpired).not.toHaveBeenCalled();
   });
