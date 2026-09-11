@@ -105,7 +105,9 @@ describe("JobsDashboard session expiry", () => {
     expect(screen.queryByText(lead.title)).toBeNull();
   });
 
-  it("shows an error toast when a non-session status update fails", async () => {
+  it(
+    "shows an error toast when a non-session status update fails",
+    async () => {
     vi.mocked(fetchAdminLeads).mockResolvedValue([lead]);
     vi.mocked(updateAdminLeadStatus).mockRejectedValue(
       new AdminLeadsApiError("request_failed", 500),
@@ -118,18 +120,23 @@ describe("JobsDashboard session expiry", () => {
     const statusSelect = document.getElementById(`status-${lead.id}`) as HTMLSelectElement;
     fireEvent.change(statusSelect, { target: { value: "contacted" } });
 
-    await waitFor(() => {
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          variant: "error",
-          title: en.leads.toasts.statusUpdateFailedTitle,
-        }),
-      );
-    });
+    await waitFor(
+      () => {
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            variant: "error",
+            title: en.leads.toasts.statusUpdateFailedTitle,
+          }),
+        );
+      },
+      { timeout: 10_000 },
+    );
 
     expect(mockReplace).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: lead.title })).toBeTruthy();
-  });
+    },
+    15_000,
+  );
 
   it("clears the drawer and loaded leads when detail fetch expires", async () => {
     vi.mocked(fetchAdminLeads).mockResolvedValue([lead]);

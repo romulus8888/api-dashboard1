@@ -286,6 +286,16 @@ describe("phase 6 admin handlers", () => {
     expect(payload.data[0].body).toBe("First");
   });
 
+  it("rejects lost transitions without a reason", async () => {
+    const response = await handleTransitionLeadStatus(
+      LEAD_ID,
+      buildMutationRequest(`/api/admin/leads/${LEAD_ID}/status`, { status: "lost" }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(createServiceSupabaseClientMock).not.toHaveBeenCalled();
+  });
+
   it("uses RPC only for lost transitions without a follow-up loss_reason update", async () => {
     const rpcMock = vi.fn().mockResolvedValue({
       data: { id: LEAD_ID, status: "lost", loss_reason: "Budget" },

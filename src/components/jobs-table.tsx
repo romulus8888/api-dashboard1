@@ -144,6 +144,7 @@ function JobsTableRow({
             size="sm"
             value={lead.status}
             disabled={updating}
+            excludedStatuses={["lost"]}
             onChange={(status) => onStatusChange(lead, status)}
           />
           {updating ? (

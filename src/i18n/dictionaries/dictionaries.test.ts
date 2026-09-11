@@ -77,6 +77,17 @@ describe("dictionaries", () => {
     expect(ru.leads.overdue).toMatch(/[А-Яа-яЁё]/);
   });
 
+  it("localizes detail loading and comment labels for EN and RU", () => {
+    const en = getDictionary("en");
+    const ru = getDictionary("ru");
+
+    expect(en.leads.detail.loading).toBe("Loading lead details…");
+    expect(ru.leads.detail.loading).toBe("Загрузка деталей лида…");
+    expect(en.leads.detail.commentLabel).toBe("Comment");
+    expect(ru.leads.detail.commentLabel).toBe("Комментарий");
+    expect(ru.leads.detail.loading).not.toBe(en.leads.detail.loading);
+  });
+
   it("maps language-neutral API error codes to localized messages", () => {
     const en = getDictionary("en");
     const ru = getDictionary("ru");

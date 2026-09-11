@@ -12,6 +12,7 @@ export interface JobStatusSelectProps {
   disabled?: boolean;
   size?: SelectSize;
   className?: string;
+  excludedStatuses?: LeadStatus[];
 }
 
 export function JobStatusSelect({
@@ -23,13 +24,16 @@ export function JobStatusSelect({
   disabled = false,
   size = "md",
   className,
+  excludedStatuses = [],
 }: JobStatusSelectProps) {
   const { dictionary } = useLocaleContext();
 
-  const statusOptions: SelectOption<LeadStatus>[] = LEAD_STATUSES.map((status) => ({
-    value: status,
-    label: dictionary.leads.status[status],
-  }));
+  const statusOptions: SelectOption<LeadStatus>[] = LEAD_STATUSES
+    .filter((status) => !excludedStatuses.includes(status))
+    .map((status) => ({
+      value: status,
+      label: dictionary.leads.status[status],
+    }));
 
   return (
     <Select

@@ -145,6 +145,7 @@ export interface Dictionary {
       close: string;
       description: string;
       status: string;
+      loading: string;
       saving: string;
       changesSaveImmediately: string;
       details: string;
@@ -164,6 +165,8 @@ export interface Dictionary {
       nextAction: string;
       lossReason: string;
       lossReasonPlaceholder: string;
+      confirmLost: string;
+      lossReasonRequired: string;
       assignment: string;
       deadlines: string;
       saveChanges: string;
@@ -172,6 +175,7 @@ export interface Dictionary {
       historyActorSystem: string;
       comments: string;
       commentsEmpty: string;
+      commentLabel: string;
       commentPlaceholder: string;
       addComment: string;
       postingComment: string;

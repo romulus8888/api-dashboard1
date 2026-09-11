@@ -76,7 +76,9 @@ export function LeadDetailOperational({
   const detailLoading = loadedLeadId !== lead.id;
   const [commentBody, setCommentBody] = useState("");
   const [postingComment, setPostingComment] = useState(false);
-  const [lossReason, setLossReason] = useState("");
+  const [pendingLostTransition, setPendingLostTransition] = useState(false);
+  const [lossReasonDraft, setLossReasonDraft] = useState("");
+  const [lossReasonError, setLossReasonError] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState<string>("");
   const [priority, setPriority] = useState<LeadPriority>(lead.priority);
   const [firstResponseDue, setFirstResponseDue] = useState("");
@@ -99,7 +101,9 @@ export function LeadDetailOperational({
         setPriority(leadDetail.priority);
         setFirstResponseDue(toDateTimeLocalValue(leadDetail.first_response_due_at));
         setNextActionAt(toDateTimeLocalValue(leadDetail.next_action_at));
-        setLossReason(leadDetail.loss_reason ?? "");
+        setPendingLostTransition(false);
+        setLossReasonDraft("");
+        setLossReasonError(null);
         setDetailError(null);
         setHistoryError(null);
         setCommentsError(null);
@@ -179,13 +183,47 @@ export function LeadDetailOperational({
     }
   };
 
-  const handleStatusChange = async (status: LeadStatus) => {
-    const reason = status === "lost" && lossReason.trim() ? lossReason.trim() : undefined;
-    await onStatusChange(lead, status, reason);
+  const refreshDetail = async () => {
+    const refreshed = await fetchAdminLead(lead.id);
+    setDetail(refreshed);
+  };
+
+  const handleStatusSelectChange = async (status: LeadStatus) => {
+    if (status === "lost") {
+      if (activeLead.status !== "lost") {
+        setPendingLostTransition(true);
+        setLossReasonDraft("");
+        setLossReasonError(null);
+      }
+      return;
+    }
+
+    setPendingLostTransition(false);
+    setLossReasonDraft("");
+    setLossReasonError(null);
+
+    if (status !== activeLead.status) {
+      await onStatusChange(lead, status);
+      await refreshDetail();
+    }
+  };
+
+  const handleConfirmLost = async () => {
+    const reason = lossReasonDraft.trim();
+    if (!reason) {
+      setLossReasonError(labels.lossReasonRequired);
+      return;
+    }
+
+    setLossReasonError(null);
+    await onStatusChange(lead, "lost", reason);
+    setPendingLostTransition(false);
+    setLossReasonDraft("");
+    await refreshDetail();
   };
 
   if (detailLoading) {
-    return <p className="text-sm text-slate-500">{labels.saving}</p>;
+    return <p className="text-sm text-slate-500">{labels.loading}</p>;
   }
 
   if (detailError && !detail) {
@@ -221,19 +259,41 @@ export function LeadDetailOperational({
           label={labels.status}
           value={activeLead.status}
           disabled={updating}
-          onChange={(status) => void handleStatusChange(status)}
+          onChange={(status) => void handleStatusSelectChange(status)}
         />
-        {activeLead.status === "lost" || lossReason ? (
-          <label className="mt-4 block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">{labels.lossReason}</span>
-            <textarea
-              value={lossReason}
-              onChange={(event) => setLossReason(event.target.value)}
-              placeholder={labels.lossReasonPlaceholder}
-              rows={3}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
-            />
-          </label>
+        {pendingLostTransition ? (
+          <div className="mt-4 space-y-3">
+            <label htmlFor={`loss-reason-${lead.id}`} className="block">
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">{labels.lossReason}</span>
+              <textarea
+                id={`loss-reason-${lead.id}`}
+                value={lossReasonDraft}
+                onChange={(event) => {
+                  setLossReasonDraft(event.target.value);
+                  if (lossReasonError) setLossReasonError(null);
+                }}
+                placeholder={labels.lossReasonPlaceholder}
+                rows={3}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+              />
+            </label>
+            {lossReasonError ? <p className="text-sm text-rose-600">{lossReasonError}</p> : null}
+            <button
+              type="button"
+              disabled={updating || !lossReasonDraft.trim()}
+              onClick={() => void handleConfirmLost()}
+              className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {updating ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+              {labels.confirmLost}
+            </button>
+          </div>
+        ) : null}
+        {activeLead.status === "lost" && detail?.loss_reason ? (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <h4 className="text-sm font-medium text-slate-700">{labels.lossReason}</h4>
+            <p className="mt-2 text-sm whitespace-pre-line text-slate-600">{detail.loss_reason}</p>
+          </div>
         ) : null}
       </section>
 
@@ -353,13 +413,17 @@ export function LeadDetailOperational({
           </ul>
         )}
         <div className="mt-4 space-y-2">
-          <textarea
-            value={commentBody}
-            onChange={(event) => setCommentBody(event.target.value)}
-            placeholder={labels.commentPlaceholder}
-            rows={3}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
-          />
+          <label htmlFor={`comment-${lead.id}`} className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">{labels.commentLabel}</span>
+            <textarea
+              id={`comment-${lead.id}`}
+              value={commentBody}
+              onChange={(event) => setCommentBody(event.target.value)}
+              placeholder={labels.commentPlaceholder}
+              rows={3}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+            />
+          </label>
           <button
             type="button"
             disabled={postingComment || !commentBody.trim()}
