@@ -318,9 +318,9 @@ begin
     where entry->>'source' = 'manual'
       and (entry->>'received')::bigint = 1
       and (entry->>'won')::bigint = 0
-      and entry->>'conversion' is null
+      and (entry->>'conversion')::numeric = 0
   ) then
-    raise exception 'expected manual source received=1 won=0 conversion=null';
+    raise exception 'expected manual source received=1 won=0 conversion=0';
   end if;
 
   if (v_metrics #>> '{timing,first_action,sample_size}')::bigint is distinct from 2 then
