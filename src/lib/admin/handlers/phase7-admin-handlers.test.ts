@@ -96,9 +96,14 @@ describe("phase 7 admin metrics handler", () => {
   });
 
   it("rejects non-canonical UTC timestamps", async () => {
-    const offsetResponse = await handleGetLeadMetrics(
+    const zeroOffsetResponse = await handleGetLeadMetrics(
       new Request(
         "http://localhost/api/admin/metrics?from=2026-08-01T00:00:00.000%2B00:00&to=2026-09-01T00:00:00.000Z",
+      ),
+    );
+    const nonZeroOffsetResponse = await handleGetLeadMetrics(
+      new Request(
+        "http://localhost/api/admin/metrics?from=2026-09-01T05:00:00%2B05:00&to=2026-09-08T00:00:00.000Z",
       ),
     );
     const dateOnlyResponse = await handleGetLeadMetrics(
@@ -107,7 +112,8 @@ describe("phase 7 admin metrics handler", () => {
       ),
     );
 
-    expect(offsetResponse.status).toBe(400);
+    expect(zeroOffsetResponse.status).toBe(400);
+    expect(nonZeroOffsetResponse.status).toBe(400);
     expect(dateOnlyResponse.status).toBe(400);
     expect(createServiceSupabaseClientMock).not.toHaveBeenCalled();
   });

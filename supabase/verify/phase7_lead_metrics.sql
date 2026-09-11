@@ -116,13 +116,14 @@ begin
   )
   returning id into v_lead_c_id;
 
+  -- Parent for duplicate child must live outside the cohort window.
   insert into public.leads (
     source, contact_name, contact_email, title, description,
     is_synthetic, status, created_at
   )
   values (
     'demo_seed', 'Lead Parent', 'parent@example.demo', 'Duplicate parent', 'Parent for duplicate',
-    true, 'new', '2026-09-04T09:00:00Z'
+    true, 'new', '2026-08-25T09:00:00Z'
   )
   returning id into v_lead_parent_id;
 
@@ -238,6 +239,26 @@ begin
     raise exception 'expected overall conversion 0.5, got %', v_metrics #>> '{conversion,overall}';
   end if;
 
+  if (v_metrics #>> '{conversion,received_to_started}')::numeric is distinct from 1 then
+    raise exception 'expected received_to_started conversion 1, got %',
+      v_metrics #>> '{conversion,received_to_started}';
+  end if;
+
+  if (v_metrics #>> '{conversion,started_to_contacted}')::numeric is distinct from 1 then
+    raise exception 'expected started_to_contacted conversion 1, got %',
+      v_metrics #>> '{conversion,started_to_contacted}';
+  end if;
+
+  if (v_metrics #>> '{conversion,contacted_to_qualified}')::numeric is distinct from 0.5 then
+    raise exception 'expected contacted_to_qualified conversion 0.5, got %',
+      v_metrics #>> '{conversion,contacted_to_qualified}';
+  end if;
+
+  if (v_metrics #>> '{conversion,qualified_to_won}')::numeric is distinct from 1 then
+    raise exception 'expected qualified_to_won conversion 1, got %',
+      v_metrics #>> '{conversion,qualified_to_won}';
+  end if;
+
   if (v_metrics #>> '{timing,first_action,average_seconds}')::bigint is distinct from 3600 then
     raise exception 'expected first_action average_seconds=3600, got %',
       v_metrics #>> '{timing,first_action,average_seconds}';
@@ -278,6 +299,33 @@ begin
   if v_source_received <> v_received or v_source_won <> v_won then
     raise exception 'source totals must reconcile with cohort totals: sources %/% vs cohort %/%',
       v_source_won, v_source_received, v_won, v_received;
+  end if;
+
+  if not exists (
+    select 1
+    from jsonb_array_elements(v_metrics #> '{sources}') as entry
+    where entry->>'source' = 'demo_seed'
+      and (entry->>'received')::bigint = 1
+      and (entry->>'won')::bigint = 1
+      and (entry->>'conversion')::numeric = 1
+  ) then
+    raise exception 'expected demo_seed source received=1 won=1 conversion=1';
+  end if;
+
+  if not exists (
+    select 1
+    from jsonb_array_elements(v_metrics #> '{sources}') as entry
+    where entry->>'source' = 'manual'
+      and (entry->>'received')::bigint = 1
+      and (entry->>'won')::bigint = 0
+      and entry->>'conversion' is null
+  ) then
+    raise exception 'expected manual source received=1 won=0 conversion=null';
+  end if;
+
+  if (v_metrics #>> '{timing,first_action,sample_size}')::bigint is distinct from 2 then
+    raise exception 'expected first_action sample_size=2, got %',
+      v_metrics #>> '{timing,first_action,sample_size}';
   end if;
 
   raise notice 'OK: populated cohort metrics';

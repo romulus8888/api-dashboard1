@@ -52,6 +52,13 @@ describe("metricsQuerySchema", () => {
 
     expect(() =>
       metricsQuerySchema.parse({
+        from: "2026-09-01T05:00:00+05:00",
+        to: "2026-09-01T00:00:00.000Z",
+      }),
+    ).toThrow();
+
+    expect(() =>
+      metricsQuerySchema.parse({
         from: "2026-08-01",
         to: "2026-09-01T00:00:00.000Z",
       }),
