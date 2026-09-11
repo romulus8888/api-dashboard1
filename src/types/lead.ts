@@ -263,6 +263,14 @@ export interface Database {
         };
         Returns: LeadRow;
       };
+      get_lead_metrics: {
+        Args: {
+          p_from: string;
+          p_to: string;
+          p_as_of?: string;
+        };
+        Returns: Record<string, unknown>;
+      };
     };
     Enums: {
       lead_status: LeadStatus;

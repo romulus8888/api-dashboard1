@@ -86,11 +86,48 @@ export interface Dictionary {
     showingCountPlural: string;
   };
   leads: {
-    stats: {
-      total: string;
-      new: string;
-      inProgress: string;
-      won: string;
+    metrics: {
+      title: string;
+      rangeLabel: string;
+      emptyTitle: string;
+      emptyDescription: string;
+      loadFailed: string;
+      funnel: {
+        title: string;
+        stage: string;
+        count: string;
+        conversion: string;
+        received: string;
+        started: string;
+        contacted: string;
+        qualified: string;
+        won: string;
+      };
+      conversion: {
+        overall: string;
+      };
+      timing: {
+        title: string;
+        firstAction: string;
+        firstTerminal: string;
+        average: string;
+        median: string;
+        sampleSize: string;
+        noSamples: string;
+      };
+      overdue: {
+        title: string;
+        firstResponse: string;
+        nextAction: string;
+        total: string;
+      };
+      sources: {
+        title: string;
+        source: string;
+        received: string;
+        won: string;
+        conversion: string;
+      };
     };
     syntheticBadge: string;
     overdue: string;

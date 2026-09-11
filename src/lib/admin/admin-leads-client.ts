@@ -6,6 +6,7 @@ import type {
   LeadStatus,
   LeadStatusHistoryEntry,
 } from "@/types/lead";
+import type { LeadMetrics } from "@/types/metrics";
 
 export type AdminLeadListItem = Pick<
   Lead,
@@ -87,6 +88,10 @@ interface LeadCommentResponse {
   data: LeadComment;
 }
 
+interface MetricsResponse {
+  data: LeadMetrics;
+}
+
 async function parseErrorCode(response: Response): Promise<AdminLeadsErrorCode> {
   try {
     const payload = (await response.json()) as { error?: string };
@@ -156,6 +161,11 @@ export async function fetchAdminLeads(): Promise<AdminLeadListItem[]> {
 
 export async function fetchAdminLead(id: string): Promise<AdminLeadDetail> {
   const payload = await requestJson<LeadDetailResponse>(`/api/admin/leads/${id}`);
+  return payload.data;
+}
+
+export async function fetchAdminMetrics(): Promise<LeadMetrics> {
+  const payload = await requestJson<MetricsResponse>("/api/admin/metrics");
   return payload.data;
 }
 

@@ -8,6 +8,7 @@ import {
   AdminLeadsApiError,
   fetchAdminLead,
   fetchAdminLeads,
+  fetchAdminMetrics,
   fetchAdminOperators,
   updateAdminLeadStatus,
 } from "@/lib/admin/admin-leads-client";
@@ -39,6 +40,7 @@ vi.mock("@/lib/admin/admin-leads-client", async (importOriginal) => {
     fetchAdminLeads: vi.fn(),
     fetchAdminLead: vi.fn(),
     fetchAdminOperators: vi.fn(),
+    fetchAdminMetrics: vi.fn(),
     updateAdminLeadStatus: vi.fn(),
   };
 });
@@ -78,8 +80,30 @@ describe("JobsDashboard session expiry", () => {
     vi.mocked(fetchAdminLeads).mockReset();
     vi.mocked(fetchAdminLead).mockReset();
     vi.mocked(fetchAdminOperators).mockReset();
+    vi.mocked(fetchAdminMetrics).mockReset();
     vi.mocked(updateAdminLeadStatus).mockReset();
     vi.mocked(fetchAdminOperators).mockResolvedValue([]);
+    vi.mocked(fetchAdminMetrics).mockResolvedValue({
+      range: {
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-09-01T00:00:00.000Z",
+        as_of: "2026-09-01T00:00:00.000Z",
+      },
+      funnel: { received: 0, started: 0, contacted: 0, qualified: 0, won: 0 },
+      conversion: {
+        overall: null,
+        received_to_started: null,
+        started_to_contacted: null,
+        contacted_to_qualified: null,
+        qualified_to_won: null,
+      },
+      sources: [],
+      timing: {
+        first_action: { average_seconds: null, median_seconds: null, sample_size: 0 },
+        first_terminal: { average_seconds: null, median_seconds: null, sample_size: 0 },
+      },
+      overdue: { first_response: 0, next_action: 0, total: 0 },
+    });
     mockReplace.mockReset();
     mockToast.mockReset();
   });

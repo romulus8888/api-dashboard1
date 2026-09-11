@@ -6,12 +6,13 @@ import { JobDetailDrawer } from "@/components/job-detail-drawer";
 import { JobsEmptyState } from "@/components/jobs-empty-state";
 import { JobsErrorState } from "@/components/jobs-error-state";
 import { JobsFilters } from "@/components/jobs-filters";
-import { JobsStats } from "@/components/jobs-stats";
+import { JobsMetrics } from "@/components/jobs-metrics";
 import { JobsTable } from "@/components/jobs-table";
 import { JobsTableSkeleton } from "@/components/jobs-table-skeleton";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { useAdminSessionExpiry } from "@/hooks/use-admin-session-expiry";
 import { useLeads } from "@/hooks/use-leads";
+import { useMetrics } from "@/hooks/use-metrics";
 import { useLocaleContext } from "@/i18n/locale-provider";
 import {
   AdminLeadsApiError,
@@ -49,9 +50,13 @@ export function JobsDashboardContent({ loadingLabel }: { loadingLabel: string })
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [operators, setOperators] = useState<ActiveOperatorOption[]>([]);
   const clearLoadedLeadsRef = useRef<() => void>(() => {});
+  const clearMetricsRef = useRef<() => void>(() => {});
 
   const handleSessionExpired = useAdminSessionExpiry({
-    clearLoadedLeads: () => clearLoadedLeadsRef.current(),
+    clearLoadedLeads: () => {
+      clearLoadedLeadsRef.current();
+      clearMetricsRef.current();
+    },
     clearSelectedLead: () => setSelectedLeadId(null),
   });
 
@@ -69,9 +74,21 @@ export function JobsDashboardContent({ loadingLabel }: { loadingLabel: string })
     patchLead,
   } = useLeads({ onSessionExpired: handleSessionExpired });
 
+  const {
+    metrics,
+    loading: metricsLoading,
+    loadError: metricsLoadError,
+    clearMetrics,
+    reload: reloadMetrics,
+  } = useMetrics({ onSessionExpired: handleSessionExpired });
+
   useEffect(() => {
     clearLoadedLeadsRef.current = clearLoadedLeads;
   }, [clearLoadedLeads]);
+
+  useEffect(() => {
+    clearMetricsRef.current = clearMetrics;
+  }, [clearMetrics]);
 
   const { toast } = useToast();
 
@@ -96,6 +113,12 @@ export function JobsDashboardContent({ loadingLabel }: { loadingLabel: string })
   );
 
   const resetFilters = useCallback(() => setFilters(DEFAULT_LEAD_FILTERS), []);
+
+  const resolvedMetricsError = useMemo(() => {
+    if (!metricsLoadError) return null;
+    if (metricsLoadError === "forbidden") return dictionary.leads.error.forbidden;
+    return dictionary.leads.metrics.loadFailed;
+  }, [dictionary, metricsLoadError]);
 
   const resolvedLoadError = useMemo(() => {
     if (!loadError) return null;
@@ -176,7 +199,12 @@ export function JobsDashboardContent({ loadingLabel }: { loadingLabel: string })
 
   return (
     <div className="space-y-6">
-      <JobsStats leads={leads} loading={loading} />
+      <JobsMetrics
+        metrics={metrics}
+        loading={metricsLoading}
+        loadError={resolvedMetricsError}
+        onRetry={reloadMetrics}
+      />
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <JobsFilters

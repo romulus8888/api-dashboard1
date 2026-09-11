@@ -77,6 +77,15 @@ describe("dictionaries", () => {
     expect(ru.leads.overdue).toMatch(/[А-Яа-яЁё]/);
   });
 
+  it("localizes funnel metrics copy for EN and RU", () => {
+    const en = getDictionary("en");
+    const ru = getDictionary("ru");
+
+    expect(en.leads.metrics.title).toBe("Funnel metrics");
+    expect(ru.leads.metrics.title).toMatch(/[А-Яа-яЁё]/);
+    expect(ru.leads.metrics.emptyTitle).toMatch(/[А-Яа-яЁё]/);
+  });
+
   it("localizes detail loading and comment labels for EN and RU", () => {
     const en = getDictionary("en");
     const ru = getDictionary("ru");
