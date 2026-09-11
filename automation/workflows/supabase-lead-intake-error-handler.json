@@ -1,0 +1,94 @@
+{
+  "name": "Supabase lead intake — error handler",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "8b21d4a3-0000-4a00-8000-000000000001",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {},
+      "notes": "Fires when a workflow with this Error Workflow assigned fails. Provides execution id, node name, and bounded error text."
+    },
+    {
+      "id": "8b21d4a3-0000-4a00-8000-000000000002",
+      "name": "Supabase — fail lead processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/fail_lead_processing",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_workflow_execution_id\": \"{{ $json.execution.id }}\",\n  \"p_error_message\": {{ JSON.stringify(('n8n lead intake failed at node ' + ($json.execution?.lastNodeExecuted ?? 'unknown') + ': ' + ($json.execution?.error?.message ?? 'no error message')).replace(/\\s+/g, ' ').slice(0, 300)) }},\n  \"p_details\": {\n    \"source\": \"error_handler\",\n    \"failed_node\": {{ JSON.stringify($json.execution?.lastNodeExecuted ?? 'unknown') }}\n  }\n}",
+        "options": {}
+      },
+      "notes": "Marks the open received claim failed and moves the lead to needs_review. Returns false when no claim exists (failure before claim)."
+    },
+    {
+      "id": "8b21d4a3-0000-4a00-8000-000000000003",
+      "name": "Telegram — notify lead intake failure",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [280, 120],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=n8n lead automation failure\n\nWorkflow: {{ $('Error Trigger').item.json.workflow?.name ?? 'unknown' }}\nExecution ID: {{ $('Error Trigger').item.json.execution?.id ?? 'unknown' }}\nFailed node: {{ $('Error Trigger').item.json.execution?.lastNodeExecuted ?? 'unknown' }}\nError: {{ ($('Error Trigger').item.json.execution?.error?.message ?? 'no error message').replace(/\\s+/g, ' ').slice(0, 200) }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "notes": "Workflow/execution/node/bounded error only. Credential and chat ID are manual post-import setup."
+    },
+    {
+      "id": "8b21d4a3-0000-4a00-8000-000000000004",
+      "name": "Setup note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, -300],
+      "parameters": {
+        "width": 500,
+        "height": 220,
+        "content": "## Manual setup after import\n\n1. Assign this workflow in the lead intake workflow **Settings → Error Workflow**.\n2. Create a **Telegram API** credential and select it in `Telegram — notify lead intake failure`.\n3. Replace `YOUR_TELEGRAM_CHAT_ID` with your chat id.\n\nDB failure marking and Telegram run in parallel from the Error Trigger so a Supabase error does not block the alert attempt.\n\nSee `automation/workflows/lead-error-handler-README.md`."
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase — fail lead processing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Telegram — notify lead intake failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

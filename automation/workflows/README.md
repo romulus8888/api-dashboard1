@@ -1,147 +1,88 @@
-# Workflow: Supabase job intake (polling)
+# Workflow: Supabase lead intake (polling)
 
-Файл: `supabase-job-intake-polling.json`
+File: `supabase-lead-intake-polling.json`
 
-Первый рабочий контур автоматизации. Раз в минуту забирает новые заявки из
-Supabase, атомарно захватывает каждую через RPC `claim_job_for_processing`,
-переводит в `in_progress` и пишет технический аудит.
+Lead-aligned automation for `public.leads` and `public.lead_processing_audit`.
+Once per minute it polls eligible leads, atomically claims each lead through
+`claim_lead_for_processing`, transitions status through `transition_lead_status`,
+writes a `triaged` audit row, and closes the claim with `complete_lead_processing`.
 
-Workflow импортируется **неактивным** (`active: false`) и ничего не делает,
-пока вы не включите его вручную.
+The workflow imports as **inactive** (`active: false`) and does nothing until
+you activate it manually.
 
-## Что делает
+Legacy job workflows remain in `legacy-supabase-job-intake-*.json` for reference
+only.
 
-| Нода | Действие |
+## What it does
+
+| Node | Action |
 | --- | --- |
-| `Schedule Trigger` | Запуск раз в минуту |
-| `Supabase — fetch pending jobs` | `GET /rest/v1/jobs`: до 50 строк со `status=eq.pending`, сортировка `created_at.asc` |
-| `Supabase — claim job processing` | `POST /rest/v1/rpc/claim_job_for_processing` с ключом `job.created:<job_id>` и `$execution.id` |
-| `Claim succeeded?` | Продолжает только при `true` |
-| `Supabase — mark job in progress` | `PATCH /rest/v1/jobs?id=eq.<job_id>` → `status = in_progress` |
-| `Supabase — audit triaged` | `POST /rest/v1/job_processing_audit`: `step = triaged`, `outcome = succeeded` |
-| `Supabase — complete intake claim` | `PATCH /rest/v1/job_processing_audit`: строка `received` переводится из `processing` в `succeeded` |
+| `Schedule Trigger` | Runs once per minute |
+| `Supabase — fetch eligible leads` | `GET /rest/v1/leads` with `automation_state=eq.idle` and `status=eq.new` |
+| `Split lead results` | Expands the PostgREST JSON array into one item per lead |
+| `Supabase — claim lead processing` | `POST /rest/v1/rpc/claim_lead_for_processing` |
+| `Claim succeeded?` | Continues only on `true` |
+| `Supabase — transition lead status` | `POST /rest/v1/rpc/transition_lead_status` → `in_progress` |
+| `Supabase — audit triaged` | `POST /rest/v1/lead_processing_audit` with versioned idempotency key |
+| `Supabase — complete lead processing` | `POST /rest/v1/rpc/complete_lead_processing` |
 
-Из заявки выбираются только `id`, `status` и `created_at`: email, описание и
-бюджет в n8n не попадают. Все пишущие запросы идут с `Prefer: return=minimal`,
-поэтому Supabase не возвращает содержимое строк обратно в историю выполнений.
+Only `id`, `status`, `automation_state`, `automation_attempt`, and `created_at`
+are fetched. Contact fields and descriptions never enter n8n execution data.
 
-Ветка `false` у `Claim succeeded?` намеренно ни к чему не подключена. `false`
-означает, что событие уже захвачено раньше, и это штатный исход, а не ошибка —
-выполнение просто останавливается.
+The `false` branch of `Claim succeeded?` is intentionally unwired: duplicate or
+ineligible claims stop normally without raising an error.
 
-## Импорт
+## Import
 
-1. Откройте n8n: <http://localhost:5678>.
-2. **Workflows → Import from File** (или меню `…` → *Import from File*).
-3. Выберите `automation/workflows/supabase-job-intake-polling.json`.
-4. Сохраните workflow. Активировать пока не нужно.
+1. Open n8n at <http://localhost:5678>.
+2. **Workflows → Import from File**.
+3. Select `automation/workflows/supabase-lead-intake-polling.json`.
+4. Save the workflow. Do not activate yet.
 
-## Замена placeholder URL
+## Placeholder URL
 
-Во всех пяти HTTP-нодах стоит адрес-заглушка:
+Replace `YOUR_PROJECT_REF` in every HTTP node:
 
-```
-https://YOUR_PROJECT_REF.supabase.co/rest/v1/...
-```
-
-Заменять нужно **только** `YOUR_PROJECT_REF` — на реф своего проекта Supabase
-(Project Settings → Data API → Project URL). Полный путь endpoint сохраняется
-как есть:
-
-| Нода | Endpoint |
+| Node | Endpoint |
 | --- | --- |
-| `Supabase — fetch pending jobs` | `/rest/v1/jobs` |
-| `Supabase — claim job processing` | `/rest/v1/rpc/claim_job_for_processing` |
-| `Supabase — mark job in progress` | `/rest/v1/jobs` |
-| `Supabase — audit triaged` | `/rest/v1/job_processing_audit` |
-| `Supabase — complete intake claim` | `/rest/v1/job_processing_audit` |
-
-Реального project ref в репозитории нет и быть не должно — правки делаются
-только в вашем локальном n8n.
+| `Supabase — fetch eligible leads` | `/rest/v1/leads` |
+| `Supabase — claim lead processing` | `/rest/v1/rpc/claim_lead_for_processing` |
+| `Supabase — transition lead status` | `/rest/v1/rpc/transition_lead_status` |
+| `Supabase — audit triaged` | `/rest/v1/lead_processing_audit` |
+| `Supabase — complete lead processing` | `/rest/v1/rpc/complete_lead_processing` |
 
 ## Credentials
 
-Ключ `service_role` **не хранится в этом JSON** и не должен туда попадать.
-Создайте credential в n8n после импорта:
+Use a **Supabase API** credential with the `service_role` key. The key is never
+committed to Git.
 
-**Вариант 1 (рекомендуемый) — Supabase API.**
-*Credentials → New → Supabase API*: укажите host проекта и `service_role` key.
-n8n сам подставит оба обязательных заголовка — `apikey` и
-`Authorization: Bearer <key>`. Все пять HTTP-нод уже настроены на этот тип
-credential, останется только выбрать созданную запись в каждой ноде.
+Apply these migrations before the first run:
 
-**Вариант 2 — Header Auth.**
-Одна credential типа *Header Auth* задаёт один заголовок, поэтому нужны оба:
-`apikey: <service_role key>` и `Authorization: Bearer <service_role key>`.
-В этом случае в каждой ноде переключите *Authentication* на
-`Generic Credential Type → Header Auth`, а недостающий заголовок добавьте в
-секции *Headers* самой ноды.
+- `supabase/migrations/20260910120000_create_lead_schema_and_status_history.sql`
+- `supabase/migrations/20260911200000_create_lead_automation_rpcs.sql`
 
-Почему именно `service_role`: таблица `job_processing_audit` закрыта RLS без
-policy, а `EXECUTE` на RPC выдан только этой роли. Ключ живёт исключительно в
-n8n credentials — не в `docker-compose.yml`, не в `.env` приложения и никогда в
-`NEXT_PUBLIC_*`. Подробности — в `docs/supabase-processing-audit.md`.
+## Error workflow (manual step)
 
-Перед первым запуском миграция
-`supabase/migrations/20260814000000_create_job_processing_audit.sql` должна быть
-применена, иначе RPC и таблица аудита не существуют.
+Assign `Supabase lead intake — error handler`
+(`supabase-lead-intake-error-handler.json`) in the intake workflow
+**Settings → Error Workflow**. This assignment is not stored in the JSON export.
 
-## Тест на одной заявке
+See `automation/workflows/lead-error-handler-README.md`.
 
-1. Создайте одну заявку через форму приложения — она появится со статусом
-   `pending`.
-2. В n8n откройте workflow и нажмите **Execute workflow** (ручной запуск, без
-   активации расписания).
-3. Проверьте результат в Supabase SQL Editor:
+## Manual retry after failure
 
-```sql
-select id, status from public.jobs order by created_at desc limit 1;
+When automation fails, operators can requeue a lead from the dashboard
+(**Retry automation**). That calls `retry_lead_automation`, increments
+`automation_attempt`, and preserves every previous audit row. The next poll uses
+a new idempotency key: `lead.created:<lead_id>:attempt:<automation_attempt>`.
 
-select step, outcome, workflow_execution_id, details, created_at
-from public.job_processing_audit
-where job_id = '<job_id>'
-order by created_at;
-```
+Stale `automation_state=processing` rows are not retried automatically. Resolve
+the open claim first.
 
-Ожидаемый результат:
+## What this workflow does not claim
 
-- `jobs.status` = `in_progress`;
-- две audit-записи по заявке: `received` / `succeeded` (создана RPC как
-  `processing` и закрыта завершающей нодой) и `triaged` / `succeeded`;
-- в обеих `workflow_execution_id` совпадает с ID запуска n8n.
-
-Если выполнение оборвалось раньше завершающей ноды, строка `received` может
-остаться в `processing` до срабатывания error handler (если он назначен в
-Settings → Error Workflow). Незакрытый `processing` — сигнал незавершённой
-обработки; см. `error-handler-README.md`.
-
-Повторный запуск на той же заявке проверяет идемпотентность: RPC вернёт
-`false`, ветка `true` не выполнится, новых записей не появится. Заявка при этом
-уже не в `pending`, поэтому в следующую выборку она не попадёт.
-
-## Чего workflow пока не делает
-
-- **Не подключён к Vercel.** Работает только при локальном n8n + ручной настройке.
-- **Не активен после импорта** — нужно включить `Active` и назначить Error Workflow
-  в Settings (в JSON поля `errorWorkflow` нет).
-- **Telegram в основном workflow нет** — уведомления только в error handler
-  (`supabase-job-intake-error-handler.json`), после ручной настройки credential.
-- **Не использует публичный webhook** — только polling раз в минуту.
-- **Не восстанавливает заявку после `received` / `failed`:** ключ
-  `job.created:<job_id>` занят; повторный захват вернёт `false` без ручной
-  очистки audit или новой тестовой заявки. Восстанавливаемый retry — в планах.
-- **Не даёт end-to-end exactly-once:** есть атомарный single-winner claim и
-  подавление дубликата по ключу; обработка может оборваться после успешного claim.
-
-## Как отключить
-
-- Активированный workflow выключается тумблером **Active** в правом верхнем
-  углу редактора или в списке Workflows. После этого расписание не срабатывает.
-- Разовая пауза без изменения статуса: **Deactivate** и повторная активация,
-  когда нужно.
-- Полностью убрать логику из n8n — удалить workflow из списка; на данные в
-  Supabase это не влияет.
-
-Пока workflow неактивен, расписание не работает вообще: ручной запуск через
-*Execute workflow* по-прежнему доступен и меняет данные, помните об этом при
-тестах на боевом проекте.
+- **Not end-to-end exactly-once.** Atomic single-winner claim plus duplicate
+  suppression per attempt; processing may still fail after a successful claim.
+- **Not active after import.**
+- **No public webhook, Kafka, or hosted n8n wiring.**
+- **No credentials, tokens, project refs, or chat IDs in Git.**

@@ -217,6 +217,12 @@ export interface Dictionary {
       addComment: string;
       postingComment: string;
       syntheticNotice: string;
+      automation: string;
+      automationFailed: string;
+      retryAutomation: string;
+      retryingAutomation: string;
+      automationRetryConflict: string;
+      automationRetryFailed: string;
     };
     toasts: {
       statusUpdatedTitle: string;

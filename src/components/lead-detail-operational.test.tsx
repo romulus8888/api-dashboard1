@@ -6,10 +6,12 @@ import { LocaleProvider } from "@/i18n/locale-provider";
 import { en } from "@/i18n/dictionaries/en";
 import { ru } from "@/i18n/dictionaries/ru";
 import {
+  AdminLeadsApiError,
   createAdminLeadComment,
   fetchAdminLead,
   fetchAdminLeadComments,
   fetchAdminLeadHistory,
+  retryAdminLeadAutomation,
   type AdminLeadDetail,
   type AdminLeadListItem,
 } from "@/lib/admin/admin-leads-client";
@@ -22,6 +24,7 @@ vi.mock("@/lib/admin/admin-leads-client", async (importOriginal) => {
     fetchAdminLeadHistory: vi.fn(),
     fetchAdminLeadComments: vi.fn(),
     createAdminLeadComment: vi.fn(),
+    retryAdminLeadAutomation: vi.fn(),
   };
 });
 
@@ -54,7 +57,7 @@ const detailBase: AdminLeadDetail = {
   duplicate_of_lead_id: null,
   demo_reset_group_id: null,
   automation_state: "idle",
-  automation_attempt: 0,
+  automation_attempt: 1,
 };
 
 function renderDetail(
@@ -97,6 +100,7 @@ describe("LeadDetailOperational", () => {
     vi.mocked(fetchAdminLeadHistory).mockReset();
     vi.mocked(fetchAdminLeadComments).mockReset();
     vi.mocked(createAdminLeadComment).mockReset();
+    vi.mocked(retryAdminLeadAutomation).mockReset();
     vi.mocked(fetchAdminLeadHistory).mockResolvedValue([]);
     vi.mocked(fetchAdminLeadComments).mockResolvedValue([]);
   });
@@ -154,6 +158,61 @@ describe("LeadDetailOperational", () => {
     },
     15_000,
   );
+
+  it("shows retry automation only for failed automation_state and refreshes detail/history", async () => {
+    vi.mocked(fetchAdminLead).mockResolvedValue({
+      ...detailBase,
+      automation_state: "failed",
+      status: "needs_review",
+    });
+    vi.mocked(retryAdminLeadAutomation).mockResolvedValue({
+      ...detailBase,
+      automation_state: "idle",
+      automation_attempt: 2,
+    });
+    vi.mocked(fetchAdminLeadHistory).mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        lead_id: lead.id,
+        from_status: "in_progress",
+        to_status: "needs_review",
+        changed_by: null,
+        change_source: "automation",
+        reason: "timeout",
+        created_at: "2026-09-11T12:00:00.000Z",
+      },
+    ]);
+
+    renderDetail();
+
+    const retryButton = await screen.findByRole("button", { name: en.leads.detail.retryAutomation });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(retryAdminLeadAutomation).toHaveBeenCalledWith(lead.id);
+      expect(screen.getByText("In progress → Needs review")).toBeTruthy();
+    });
+  });
+
+  it("prevents duplicate retry clicks and surfaces conflict errors", async () => {
+    vi.mocked(fetchAdminLead).mockResolvedValue({
+      ...detailBase,
+      automation_state: "failed",
+      status: "needs_review",
+    });
+    vi.mocked(retryAdminLeadAutomation).mockRejectedValue(new AdminLeadsApiError("conflict", 409));
+
+    renderDetail();
+
+    const retryButton = await screen.findByRole("button", { name: en.leads.detail.retryAutomation });
+    fireEvent.click(retryButton);
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(retryAdminLeadAutomation).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(en.leads.detail.automationRetryConflict)).toBeTruthy();
+    });
+  });
 
   it("shows an existing loss reason read-only for already-lost leads", async () => {
     vi.mocked(fetchAdminLead).mockResolvedValue({

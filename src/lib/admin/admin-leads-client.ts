@@ -217,3 +217,12 @@ export async function updateAdminLeadStatus(
 
   return payload.data;
 }
+
+export async function retryAdminLeadAutomation(id: string): Promise<AdminLeadDetail> {
+  const payload = await requestJson<LeadDetailResponse>(`/api/admin/leads/${id}/retry`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  return payload.data;
+}

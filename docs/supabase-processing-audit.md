@@ -344,3 +344,24 @@ commit;
 ```sql
 select * from public.job_processing_audit order by created_at;
 ```
+
+## Lead automation (Phase 8)
+
+Leads use `public.lead_processing_audit` with versioned idempotency keys:
+
+`lead.created:<lead_id>:attempt:<automation_attempt>`
+
+RPCs (migration `20260911200000_create_lead_automation_rpcs.sql`):
+
+| RPC | Purpose |
+| --- | --- |
+| `claim_lead_for_processing(lead_id, execution_id)` | Atomic claim; sets `automation_state=processing` |
+| `complete_lead_processing(lead_id, execution_id)` | Closes `received` as `succeeded` |
+| `fail_lead_processing(execution_id, error, details)` | Marks claim `failed`, sets `automation_state=failed`, transitions lead to `needs_review` |
+| `retry_lead_automation(lead_id, changed_by)` | Manual recovery; increments attempt, appends `requeue` audit row |
+
+Verification: `supabase/verify/phase8_lead_automation.sql` (rollback-safe).
+
+n8n workflows: `automation/workflows/supabase-lead-intake-polling.json` and
+`supabase-lead-intake-error-handler.json` (import inactive; assign Error Workflow
+manually).

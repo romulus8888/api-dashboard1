@@ -232,6 +232,12 @@ export const en: Dictionary = {
       addComment: "Add comment",
       postingComment: "Posting…",
       syntheticNotice: "This is synthetic demo data for training and review only.",
+      automation: "Automation",
+      automationFailed: "Automation failed and needs manual retry.",
+      retryAutomation: "Retry automation",
+      retryingAutomation: "Retrying…",
+      automationRetryConflict: "Automation cannot be retried right now. Refresh and try again.",
+      automationRetryFailed: "Could not retry automation.",
     },
     toasts: {
       statusUpdatedTitle: "Status updated",

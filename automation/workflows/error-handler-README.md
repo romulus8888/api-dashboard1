@@ -1,6 +1,9 @@
-# Workflow: Supabase job intake — error handler
+# Workflow: Supabase job intake — error handler (legacy)
 
-Файл: `supabase-job-intake-error-handler.json`
+> **Current automation:** use `supabase-lead-intake-error-handler.json` and
+> `automation/workflows/lead-error-handler-README.md` for lead-aligned processing.
+
+Файл: `legacy-supabase-job-intake-error-handler.json`
 
 Аварийный обработчик для `Supabase job intake (polling)`
 (`supabase-job-intake-polling.json`). Когда основной workflow падает, этот

@@ -271,6 +271,13 @@ export interface Database {
         };
         Returns: Record<string, unknown>;
       };
+      retry_lead_automation: {
+        Args: {
+          p_lead_id: string;
+          p_changed_by: string | null;
+        };
+        Returns: LeadRow;
+      };
     };
     Enums: {
       lead_status: LeadStatus;

@@ -1,0 +1,285 @@
+{
+  "name": "Supabase lead intake (polling)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000001",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-420, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "notes": "Polls once per minute. No public webhook is used."
+    },
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000002",
+      "name": "Supabase — fetch eligible leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/leads",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,status,automation_state,automation_attempt,created_at"
+            },
+            {
+              "name": "automation_state",
+              "value": "eq.idle"
+            },
+            {
+              "name": "status",
+              "value": "eq.new"
+            },
+            {
+              "name": "order",
+              "value": "created_at.asc"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Minimal lead fields only. Contact data and descriptions stay in Supabase."
+    },
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000003",
+      "name": "Split lead results",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 3.1,
+      "position": [20, 0],
+      "parameters": {
+        "operation": "splitOutItems",
+        "fieldToSplitOut": "=",
+        "include": "noOtherFields"
+      },
+      "notes": "PostgREST returns a JSON array. This node expands it into one item per lead before per-lead RPC calls."
+    },
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000004",
+      "name": "Supabase — claim lead processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/claim_lead_for_processing",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_lead_id\": \"{{ $json.id }}\",\n  \"p_workflow_execution_id\": \"{{ $execution.id }}\"\n}",
+        "options": {}
+      },
+      "notes": "Server derives lead.created:<lead_id>:attempt:<automation_attempt>. true = claimed, false = duplicate or ineligible."
+    },
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000005",
+      "name": "Claim succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [460, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "claim-returned-true",
+              "leftValue": "={{ $json }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "notes": "false branch is intentionally unwired: duplicate claims stop normally without error."
+    },
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000006",
+      "name": "Supabase — transition lead status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, -60],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/transition_lead_status",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_lead_id\": \"{{ $('Split lead results').item.json.id }}\",\n  \"p_to_status\": \"in_progress\",\n  \"p_change_source\": \"n8n_automation\"\n}",
+        "options": {}
+      },
+      "notes": "Uses the database-enforced status path instead of a raw PATCH on leads."
+    },
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000007",
+      "name": "Supabase — audit triaged",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, -60],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/lead_processing_audit",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lead_id\": \"{{ $('Split lead results').item.json.id }}\",\n  \"event_type\": \"lead.created\",\n  \"step\": \"triaged\",\n  \"outcome\": \"succeeded\",\n  \"idempotency_key\": \"lead.created:{{ $('Split lead results').item.json.id }}:attempt:{{ $('Split lead results').item.json.automation_attempt }}\",\n  \"workflow_execution_id\": \"{{ $execution.id }}\",\n  \"details\": {\n    \"source\": \"polling\",\n    \"poll_interval_minutes\": 1,\n    \"status_set\": \"in_progress\"\n  }\n}",
+        "options": {}
+      },
+      "notes": "Technical diagnostics only. Versioned idempotency key matches the current automation_attempt."
+    },
+    {
+      "id": "8a1f0c1e-0000-4a00-8000-000000000008",
+      "name": "Supabase — complete lead processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, -60],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rpc/complete_lead_processing",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_lead_id\": \"{{ $('Split lead results').item.json.id }}\",\n  \"p_workflow_execution_id\": \"{{ $execution.id }}\"\n}",
+        "options": {}
+      },
+      "notes": "Closes the received claim and sets automation_state=succeeded atomically."
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase — fetch eligible leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase — fetch eligible leads": {
+      "main": [
+        [
+          {
+            "node": "Split lead results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split lead results": {
+      "main": [
+        [
+          {
+            "node": "Supabase — claim lead processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase — claim lead processing": {
+      "main": [
+        [
+          {
+            "node": "Claim succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Supabase — transition lead status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Supabase — transition lead status": {
+      "main": [
+        [
+          {
+            "node": "Supabase — audit triaged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase — audit triaged": {
+      "main": [
+        [
+          {
+            "node": "Supabase — complete lead processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

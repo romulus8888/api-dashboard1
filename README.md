@@ -14,10 +14,10 @@ idempotency key, updates status, and records a technical audit trail. Processing
 **may still fail after a successful claim**; a separate error workflow (when
 configured) marks the open audit row as `failed` and can send a Telegram alert.
 
-**Planned, not implemented yet:** authenticated dashboard, server-side APIs,
-recoverable automation retry (a failed claim currently blocks reuse of the same
-idempotency key until manual audit cleanup or new test data), bilingual `/en` and
-`/ru` routing, and synthetic-only public intake.
+**Phase 8 (leads):** n8n polls `public.leads`, claims through versioned
+`lead.created:<lead_id>:attempt:<automation_attempt>` keys, and records audit via
+RPCs. Operators can manually retry failed automation from the authenticated
+dashboard without deleting audit history.
 
 ## Business flow
 
@@ -25,16 +25,17 @@ idempotency key until manual audit cleanup or new test data), bilingual `/en` an
    budget, priority, contact email), validated with Zod before it is sent.
 2. The request is inserted into Supabase `public.jobs` with status `pending`.
 3. n8n polls Supabase once a minute for pending requests, oldest first.
-4. For each request it calls the Postgres RPC `claim_job_for_processing()`,
-   which atomically writes a `received` / `processing` audit row. The first
-   caller wins and gets `true`; any repeat gets `false` and stops.
-5. On a successful claim the job status moves to `in_progress`.
-6. The workflow writes a `triaged` / `succeeded` audit row and closes the intake
-   claim by moving `received` from `processing` to `succeeded`.
-7. If any step fails, the error workflow marks the open claim as `failed` with a
-   short technical reason and sends a Telegram notification.
-8. An internal dashboard (currently **unauthenticated**) shows requests with
-   search, filters, and manual status updates via the browser anon key.
+4. For each eligible lead it calls `claim_lead_for_processing()`, which derives
+   `lead.created:<lead_id>:attempt:<automation_attempt>` server-side and inserts
+   `received` / `processing` atomically.
+5. On a successful claim the workflow calls `transition_lead_status()` to move the
+   lead to `in_progress`.
+6. The workflow writes `triaged` / `succeeded` and closes the claim through
+   `complete_lead_processing()`.
+7. If any step fails, the error workflow calls `fail_lead_processing()` (bounded
+   technical error only), moves the lead to `needs_review`, and attempts Telegram.
+8. Operators use the authenticated dashboard to review leads, update operational
+   fields, and manually retry failed automation via `POST /api/admin/leads/[id]/retry`.
 
 ## Architecture
 
@@ -146,7 +147,7 @@ Setup details, including how to stop the stack without deleting data:
 Then import the two workflows and connect credentials:
 
 - Intake workflow: `automation/workflows/README.md`
-- Error workflow and Telegram alerts: `automation/workflows/error-handler-README.md`
+- Lead error workflow and Telegram alerts: `automation/workflows/lead-error-handler-README.md`
 
 ## Security principles
 
@@ -172,9 +173,10 @@ Then import the two workflows and connect credentials:
 | Next.js intake form + dashboard | Yes (Vercel + local) | Auth, server APIs, `/en` `/ru` |
 | Browser → Supabase `jobs` CRUD (anon key) | Yes | Remove; lock down RLS |
 | Audit table + claim RPC (SQL migration) | In repo; apply manually | Baseline `jobs` migration in repo |
-| n8n intake workflow JSON | Yes; **inactive** after import | Versioned retry keys, status RPC |
-| n8n error workflow + Telegram JSON | Yes; **inactive**; Error Workflow **not in JSON** — assign in n8n Settings | Recoverable requeue without audit deletion |
-| Automated tests / CI | No | Yes |
+| n8n lead intake workflow JSON | Yes; **inactive** after import | Hosted n8n / public webhook |
+| n8n lead error workflow + Telegram JSON | Yes; **inactive**; Error Workflow assigned manually | — |
+| Manual automation retry (dashboard API + RPC) | Yes | Automatic retry |
+| Automated tests / CI | Yes (Vitest) | Hosted verification in CI |
 | Public webhook / Kafka | No | Future iteration |
 
 ## Current limitations
@@ -191,10 +193,9 @@ Stated explicitly:
 - **No end-to-end exactly-once guarantee.** The claim RPC provides atomic
   single-winner intake and duplicate suppression for one idempotency key;
   processing may fail afterward; external side effects are not idempotent.
-- **Failed claim blocks retry.** After a failed run, `received` / `failed`
-  occupies `('job.created:<job_id>', 'received')`, so `claim_job_for_processing()`
-  returns `false` until manual audit cleanup or new test data. Recoverable retry
-  is planned, not implemented.
+- **Manual retry only.** `retry_lead_automation()` requeues failed automation and
+  increments `automation_attempt`; stale `processing` claims must be resolved
+  separately. Legacy `public.jobs` workflows still block on `job.created:<job_id>`.
 - **No message broker** (Kafka, Redpanda, etc.).
 - **Documented manual verification only** — no automated test suite or CI.
 - **Telegram** requires local bot token and chat ID in n8n credentials.
@@ -230,8 +231,8 @@ error string — no client payload or secrets.
 | [`docs/supabase-processing-audit.md`](docs/supabase-processing-audit.md) | Audit schema, idempotency keys, access rights, verification SQL |
 | [`docs/demo-script.md`](docs/demo-script.md) | Script for a 2–3 minute demo video |
 | [`automation/README.md`](automation/README.md) | Local n8n Docker environment |
-| [`automation/workflows/README.md`](automation/workflows/README.md) | Intake workflow setup |
-| [`automation/workflows/error-handler-README.md`](automation/workflows/error-handler-README.md) | Error workflow and Telegram alerts |
+| [`automation/workflows/README.md`](automation/workflows/README.md) | Lead intake workflow setup |
+| [`automation/workflows/lead-error-handler-README.md`](automation/workflows/lead-error-handler-README.md) | Lead error workflow and Telegram alerts |
 
 ## Short description
 

@@ -234,6 +234,12 @@ export const ru: Dictionary = {
       addComment: "Добавить комментарий",
       postingComment: "Отправка…",
       syntheticNotice: "Это синтетические демо-данные только для обучения и проверки.",
+      automation: "Автоматизация",
+      automationFailed: "Автоматизация завершилась ошибкой и требует ручного повтора.",
+      retryAutomation: "Повторить автоматизацию",
+      retryingAutomation: "Повтор…",
+      automationRetryConflict: "Сейчас нельзя повторить автоматизацию. Обновите данные и попробуйте снова.",
+      automationRetryFailed: "Не удалось повторить автоматизацию.",
     },
     toasts: {
       statusUpdatedTitle: "Статус обновлён",

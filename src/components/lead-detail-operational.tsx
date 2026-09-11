@@ -18,6 +18,7 @@ import {
   fetchAdminLead,
   fetchAdminLeadComments,
   fetchAdminLeadHistory,
+  retryAdminLeadAutomation,
   type AdminLeadDetail,
   type AdminLeadListItem,
   type AdminLeadPatchInput,
@@ -83,6 +84,8 @@ export function LeadDetailOperational({
   const [priority, setPriority] = useState<LeadPriority>(lead.priority);
   const [firstResponseDue, setFirstResponseDue] = useState("");
   const [nextActionAt, setNextActionAt] = useState("");
+  const [retryingAutomation, setRetryingAutomation] = useState(false);
+  const [automationError, setAutomationError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,8 +187,42 @@ export function LeadDetailOperational({
   };
 
   const refreshDetail = async () => {
-    const refreshed = await fetchAdminLead(lead.id);
+    const [refreshed, leadHistory] = await Promise.all([
+      fetchAdminLead(lead.id),
+      fetchAdminLeadHistory(lead.id),
+    ]);
     setDetail(refreshed);
+    setHistory(leadHistory);
+  };
+
+  const handleRetryAutomation = async () => {
+    if (retryingAutomation || detail?.automation_state !== "failed") {
+      return;
+    }
+
+    setRetryingAutomation(true);
+    setAutomationError(null);
+
+    try {
+      const updated = await retryAdminLeadAutomation(lead.id);
+      setDetail(updated);
+      const leadHistory = await fetchAdminLeadHistory(lead.id);
+      setHistory(leadHistory);
+    } catch (error) {
+      if (isAdminSessionExpired(error)) {
+        onSessionExpired();
+        return;
+      }
+
+      if (error instanceof AdminLeadsApiError && error.code === "conflict") {
+        setAutomationError(labels.automationRetryConflict);
+        return;
+      }
+
+      setAutomationError(labels.automationRetryFailed);
+    } finally {
+      setRetryingAutomation(false);
+    }
   };
 
   const handleStatusSelectChange = async (status: LeadStatus) => {
@@ -293,6 +330,22 @@ export function LeadDetailOperational({
           <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3">
             <h4 className="text-sm font-medium text-slate-700">{labels.lossReason}</h4>
             <p className="mt-2 text-sm whitespace-pre-line text-slate-600">{detail.loss_reason}</p>
+          </div>
+        ) : null}
+        {detail?.automation_state === "failed" ? (
+          <div className="mt-4 space-y-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-3">
+            <h4 className="text-sm font-medium text-rose-900">{labels.automation}</h4>
+            <p className="text-sm text-rose-800">{labels.automationFailed}</p>
+            <button
+              type="button"
+              disabled={retryingAutomation}
+              onClick={() => void handleRetryAutomation()}
+              className="inline-flex items-center gap-2 rounded-xl bg-rose-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {retryingAutomation ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+              {retryingAutomation ? labels.retryingAutomation : labels.retryAutomation}
+            </button>
+            {automationError ? <p className="text-sm text-rose-700">{automationError}</p> : null}
           </div>
         ) : null}
       </section>
