@@ -1,11 +1,17 @@
 # Automated B2B project intake
 
-> **Prototype warning:** This repository is **not production-ready**. The Next.js
-> demo is publicly deployed on Vercel, but the **dashboard has no authentication**
-> and the browser talks to Supabase with the anon key. Submit **synthetic test
-> data only**. The n8n stack runs **locally**, workflows import as **inactive**,
-> and the Error Workflow must be **assigned manually** in the n8n UI before
-> failure handling works.
+> **Prototype warning:** This repository is **not production-ready**. Submit
+> **synthetic test data only**. The n8n stack runs **locally**, workflows import
+> as **inactive**, and the Error Workflow must be **assigned manually** in the n8n
+> UI before failure handling works.
+>
+> **Repository branch facts (verify before deployment claims):**
+> - This branch implements an **authenticated operator dashboard** with server-side
+>   admin APIs.
+> - **Vitest** automated tests exist in the repository.
+> - **CI is not configured** in this repository.
+> - A public deployment may run a **different revision**; confirm the live revision
+>   before describing production behavior.
 
 A technical prototype for incoming project requests: a Next.js form writes to
 Supabase, and an optional local n8n workflow polls for pending rows, performs an
@@ -170,13 +176,14 @@ Then import the two workflows and connect credentials:
 
 | Area | Implemented today | Planned |
 | --- | --- | --- |
-| Next.js intake form + dashboard | Yes (Vercel + local) | Auth, server APIs, `/en` `/ru` |
-| Browser → Supabase `jobs` CRUD (anon key) | Yes | Remove; lock down RLS |
+| Next.js intake form + authenticated dashboard | Yes (local; public deploy revision may differ) | Hosted n8n / public webhook |
+| Legacy browser → Supabase `jobs` CRUD (anon key) | Locked down in migrations | Remove legacy table |
 | Audit table + claim RPC (SQL migration) | In repo; apply manually | Baseline `jobs` migration in repo |
 | n8n lead intake workflow JSON | Yes; **inactive** after import | Hosted n8n / public webhook |
 | n8n lead error workflow + Telegram JSON | Yes; **inactive**; Error Workflow assigned manually | — |
 | Manual automation retry (dashboard API + RPC) | Yes | Automatic retry |
-| Automated tests / CI | Yes (Vitest) | Hosted verification in CI |
+| Automated tests (Vitest) | Yes | — |
+| CI pipeline | No | Add hosted verification in CI |
 | Public webhook / Kafka | No | Future iteration |
 
 ## Current limitations
@@ -186,8 +193,8 @@ Stated explicitly:
 - **Next.js is publicly deployed** (e.g. Vercel); **n8n is local only** and does
   nothing until you import workflows, configure credentials, activate polling, and
   manually assign the Error Workflow.
-- **No dashboard authentication.** Anyone who can open `/dashboard` can use the
-  app’s client-side Supabase access pattern.
+- **Public deployment may lag this branch.** Confirm the live revision before
+  claiming dashboard auth, metrics, or automation retry behavior in production.
 - **Polling, not a public webhook.** n8n polls once a minute. Supabase Database
   Webhooks would need a public HTTPS n8n endpoint.
 - **No end-to-end exactly-once guarantee.** The claim RPC provides atomic
@@ -197,7 +204,7 @@ Stated explicitly:
   increments `automation_attempt`; stale `processing` claims must be resolved
   separately. Legacy `public.jobs` workflows still block on `job.created:<job_id>`.
 - **No message broker** (Kafka, Redpanda, etc.).
-- **Documented manual verification only** — no automated test suite or CI.
+- **Vitest exists; CI does not.** SQL and n8n runtime verification remain manual.
 - **Telegram** requires local bot token and chat ID in n8n credentials.
 
 ## Documented manual verification procedures
@@ -236,8 +243,9 @@ error string — no client payload or secrets.
 
 ## Short description
 
-> B2B intake prototype: Next.js + Supabase form and unauthenticated dashboard on
-> Vercel, plus optional **local** n8n workflows that poll Supabase, perform atomic
-> single-winner claims with duplicate suppression via a Postgres RPC, and write a
-> technical audit trail. Failure handling and Telegram alerts require manual n8n
-> setup. Not production-ready — synthetic test data only.
+> B2B intake prototype: Next.js + Supabase with an authenticated operator
+> dashboard on this branch, plus optional **local** n8n workflows that poll leads,
+> perform atomic single-winner claims with versioned idempotency keys, and write a
+> technical audit trail. Vitest covers the app layer; CI is not configured.
+> Failure handling and Telegram alerts require manual n8n setup. Not
+> production-ready — synthetic test data only.

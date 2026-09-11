@@ -357,7 +357,7 @@ RPCs (migration `20260911200000_create_lead_automation_rpcs.sql`):
 | --- | --- |
 | `claim_lead_for_processing(lead_id, execution_id)` | Atomic claim; sets `automation_state=processing` |
 | `complete_lead_processing(lead_id, execution_id)` | Closes `received` as `succeeded` |
-| `fail_lead_processing(execution_id, error, details)` | Marks claim `failed`, sets `automation_state=failed`, transitions lead to `needs_review` |
+| `fail_lead_processing(execution_id, error, details)` | Marks every open claim `failed`, sets each lead `automation_state=failed`, transitions each lead to `needs_review`; returns affected count |
 | `retry_lead_automation(lead_id, changed_by)` | Manual recovery; increments attempt, appends `requeue` audit row |
 
 Verification: `supabase/verify/phase8_lead_automation.sql` (rollback-safe).

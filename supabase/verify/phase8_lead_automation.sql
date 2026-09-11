@@ -6,12 +6,15 @@ begin;
 do $$
 declare
   v_lead_id uuid;
+  v_lead_b uuid;
+  v_lead_c uuid;
   v_exec_1 text := 'exec-phase8-0001';
   v_exec_2 text := 'exec-phase8-0002';
+  v_exec_multi text := 'exec-phase8-multi';
   v_operator_id uuid := '11111111-1111-4111-8111-111111111111';
   v_claimed boolean;
   v_completed boolean;
-  v_failed boolean;
+  v_failed integer;
   v_lead public.leads;
   v_audit_count integer;
   v_failed_count integer;
@@ -126,8 +129,8 @@ begin
     '{"source":"error_handler","failed_node":"Supabase — transition lead status"}'::jsonb
   );
 
-  if v_failed is distinct from true then
-    raise exception 'expected post-claim failure true, got %', v_failed;
+  if v_failed is distinct from 1 then
+    raise exception 'expected post-claim failure count=1, got %', v_failed;
   end if;
 
   select automation_state, status into v_lead from public.leads where id = v_lead_id;
@@ -181,14 +184,102 @@ begin
     '{}'::jsonb
   );
 
-  if v_failed is distinct from false then
-    raise exception 'expected failure-before-claim false, got %', v_failed;
+  if v_failed is distinct from 0 then
+    raise exception 'expected failure-before-claim count=0, got %', v_failed;
   end if;
 
   raise notice 'OK: failure before claim is a no-op';
 
   -- --------------------------------------------------------------------------
-  -- Manual retry increments once and preserves failed rows
+  -- Multi-lead execution failure leaves completed claims untouched
+  -- --------------------------------------------------------------------------
+  insert into public.leads (
+    source, contact_name, contact_email, title, description,
+    is_synthetic, status, automation_state, automation_attempt
+  )
+  values (
+    'demo_seed', 'Multi A', 'multi-a@example.demo', 'Multi A', 'Fixture',
+    true, 'new', 'idle', 1
+  )
+  returning id into v_lead_id;
+
+  insert into public.leads (
+    source, contact_name, contact_email, title, description,
+    is_synthetic, status, automation_state, automation_attempt
+  )
+  values (
+    'demo_seed', 'Multi B', 'multi-b@example.demo', 'Multi B', 'Fixture',
+    true, 'new', 'idle', 1
+  )
+  returning id into v_lead_b;
+
+  insert into public.leads (
+    source, contact_name, contact_email, title, description,
+    is_synthetic, status, automation_state, automation_attempt
+  )
+  values (
+    'demo_seed', 'Multi C', 'multi-c@example.demo', 'Multi C', 'Fixture',
+    true, 'new', 'idle', 1
+  )
+  returning id into v_lead_c;
+
+  if public.claim_lead_for_processing(v_lead_id, v_exec_multi) is distinct from true then
+    raise exception 'expected multi claim A';
+  end if;
+
+  if public.claim_lead_for_processing(v_lead_b, v_exec_multi) is distinct from true then
+    raise exception 'expected multi claim B';
+  end if;
+
+  if public.claim_lead_for_processing(v_lead_c, v_exec_multi) is distinct from true then
+    raise exception 'expected multi claim C';
+  end if;
+
+  if public.complete_lead_processing(v_lead_c, v_exec_multi) is distinct from true then
+    raise exception 'expected completed claim C before multi failure';
+  end if;
+
+  v_failed := public.fail_lead_processing(
+    v_exec_multi,
+    'multi-lead execution failure',
+    '{"source":"error_handler","failed_node":"Supabase — transition lead status"}'::jsonb
+  );
+
+  if v_failed is distinct from 2 then
+    raise exception 'expected multi failure count=2, got %', v_failed;
+  end if;
+
+  if exists (
+    select 1
+    from public.lead_processing_audit
+    where lead_id = v_lead_c
+      and step = 'received'
+      and workflow_execution_id = v_exec_multi
+      and outcome is distinct from 'succeeded'
+  ) then
+    raise exception 'completed claim must remain succeeded';
+  end if;
+
+  select automation_state, status into v_lead from public.leads where id = v_lead_c;
+  if v_lead.automation_state is distinct from 'succeeded'
+     or v_lead.status is distinct from 'new'::public.lead_status then
+    raise exception 'completed lead must remain untouched by multi failure';
+  end if;
+
+  select count(*) into v_failed_count
+  from public.leads
+  where id in (v_lead_id, v_lead_b)
+    and automation_state = 'failed'
+    and status = 'needs_review';
+
+  if v_failed_count <> 2 then
+    raise exception 'expected two failed needs_review leads, got %', v_failed_count;
+  end if;
+
+  raise notice 'OK: multi-lead execution failure';
+
+  -- --------------------------------------------------------------------------
+  -- Manual retry increments once, preserves failed rows and needs_review status
   -- --------------------------------------------------------------------------
   v_lead := public.retry_lead_automation(v_lead_id, v_operator_id);
 
@@ -198,6 +289,14 @@ begin
 
   if v_lead.automation_state is distinct from 'idle' then
     raise exception 'expected automation_state=idle after retry';
+  end if;
+
+  if v_lead.status is distinct from 'needs_review'::public.lead_status then
+    raise exception 'expected needs_review status preserved after retry';
+  end if;
+
+  if public.claim_lead_for_processing(v_lead_id, v_exec_2) is distinct from true then
+    raise exception 'expected needs_review+idle lead to be claimable after retry';
   end if;
 
   if not exists (
@@ -221,26 +320,16 @@ begin
     raise exception 'failed received rows must remain after retry, got %', v_failed_count;
   end if;
 
-  -- --------------------------------------------------------------------------
-  -- Second claim uses new attempt key
-  -- --------------------------------------------------------------------------
-  v_claimed := public.claim_lead_for_processing(v_lead_id, v_exec_2);
-  if v_claimed is distinct from true then
-    raise exception 'expected second-attempt claim true, got %', v_claimed;
+  -- Failed needs_review leads must not be claimable until retry sets idle.
+  update public.leads
+  set automation_state = 'failed'
+  where id = v_lead_b;
+
+  if public.claim_lead_for_processing(v_lead_b, v_exec_2) is distinct from false then
+    raise exception 'expected failed needs_review lead to remain unclaimable before retry';
   end if;
 
-  if not exists (
-    select 1
-    from public.lead_processing_audit
-    where lead_id = v_lead_id
-      and step = 'received'
-      and outcome = 'processing'
-      and idempotency_key = format('lead.created:%s:attempt:2', v_lead_id::text)
-  ) then
-    raise exception 'expected received row for attempt 2 key';
-  end if;
-
-  raise notice 'OK: retry increments once and second claim uses new key';
+  raise notice 'OK: retry preserves needs_review and polling eligibility rules';
 
   -- --------------------------------------------------------------------------
   -- Illegal / concurrent retry behavior
@@ -279,7 +368,7 @@ begin
   from public.lead_processing_audit
   where lead_id = v_lead_id;
 
-  if v_audit_count < 3 then
+  if v_audit_count < 4 then
     raise exception 'expected preserved audit history across retries, got % rows', v_audit_count;
   end if;
 

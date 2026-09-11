@@ -49,7 +49,7 @@
             },
             {
               "name": "status",
-              "value": "eq.new"
+              "value": "in.(new,needs_review)"
             },
             {
               "name": "order",
@@ -63,20 +63,19 @@
         },
         "options": {}
       },
-      "notes": "Minimal lead fields only. Contact data and descriptions stay in Supabase."
+      "notes": "Eligible leads: automation_state=idle with status new or needs_review after manual retry. Failed needs_review rows stay automation_state=failed until retry_lead_automation."
     },
     {
       "id": "8a1f0c1e-0000-4a00-8000-000000000003",
-      "name": "Split lead results",
-      "type": "n8n-nodes-base.itemLists",
-      "typeVersion": 3.1,
+      "name": "Expand PostgREST lead array",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [20, 0],
       "parameters": {
-        "operation": "splitOutItems",
-        "fieldToSplitOut": "=",
-        "include": "noOtherFields"
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input = $input.first()?.json;\nconst leads = Array.isArray(input)\n  ? input\n  : Array.isArray(input?.leads)\n    ? input.leads\n    : [];\n\nif (leads.length === 0) {\n  return [];\n}\n\nreturn leads.map((lead) => ({ json: lead }));"
       },
-      "notes": "PostgREST returns a JSON array. This node expands it into one item per lead before per-lead RPC calls."
+      "notes": "PostgREST returns a JSON array. Empty arrays stop the branch with zero items; multi-row arrays become one n8n item per lead."
     },
     {
       "id": "8a1f0c1e-0000-4a00-8000-000000000004",
@@ -151,7 +150,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"p_lead_id\": \"{{ $('Split lead results').item.json.id }}\",\n  \"p_to_status\": \"in_progress\",\n  \"p_change_source\": \"n8n_automation\"\n}",
+        "jsonBody": "={\n  \"p_lead_id\": \"{{ $('Expand PostgREST lead array').item.json.id }}\",\n  \"p_to_status\": \"in_progress\",\n  \"p_change_source\": \"n8n_automation\"\n}",
         "options": {}
       },
       "notes": "Uses the database-enforced status path instead of a raw PATCH on leads."
@@ -178,7 +177,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"lead_id\": \"{{ $('Split lead results').item.json.id }}\",\n  \"event_type\": \"lead.created\",\n  \"step\": \"triaged\",\n  \"outcome\": \"succeeded\",\n  \"idempotency_key\": \"lead.created:{{ $('Split lead results').item.json.id }}:attempt:{{ $('Split lead results').item.json.automation_attempt }}\",\n  \"workflow_execution_id\": \"{{ $execution.id }}\",\n  \"details\": {\n    \"source\": \"polling\",\n    \"poll_interval_minutes\": 1,\n    \"status_set\": \"in_progress\"\n  }\n}",
+        "jsonBody": "={\n  \"lead_id\": \"{{ $('Expand PostgREST lead array').item.json.id }}\",\n  \"event_type\": \"lead.created\",\n  \"step\": \"triaged\",\n  \"outcome\": \"succeeded\",\n  \"idempotency_key\": \"lead.created:{{ $('Expand PostgREST lead array').item.json.id }}:attempt:{{ $('Expand PostgREST lead array').item.json.automation_attempt }}\",\n  \"workflow_execution_id\": \"{{ $execution.id }}\",\n  \"details\": {\n    \"source\": \"polling\",\n    \"poll_interval_minutes\": 1,\n    \"status_set\": \"in_progress\"\n  }\n}",
         "options": {}
       },
       "notes": "Technical diagnostics only. Versioned idempotency key matches the current automation_attempt."
@@ -196,7 +195,7 @@
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"p_lead_id\": \"{{ $('Split lead results').item.json.id }}\",\n  \"p_workflow_execution_id\": \"{{ $execution.id }}\"\n}",
+        "jsonBody": "={\n  \"p_lead_id\": \"{{ $('Expand PostgREST lead array').item.json.id }}\",\n  \"p_workflow_execution_id\": \"{{ $execution.id }}\"\n}",
         "options": {}
       },
       "notes": "Closes the received claim and sets automation_state=succeeded atomically."
@@ -218,14 +217,14 @@
       "main": [
         [
           {
-            "node": "Split lead results",
+            "node": "Expand PostgREST lead array",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Split lead results": {
+    "Expand PostgREST lead array": {
       "main": [
         [
           {

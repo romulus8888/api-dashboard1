@@ -161,16 +161,17 @@ create or replace function public.fail_lead_processing(
   p_error_message text default null,
   p_details jsonb default '{}'::jsonb
 )
-returns boolean
+returns integer
 language plpgsql
 security invoker
 set search_path = pg_catalog, pg_temp
 as $$
 declare
-  v_audit public.lead_processing_audit;
-  v_lead public.leads;
   v_bounded_error text;
   v_bounded_details jsonb;
+  v_affected integer := 0;
+  v_claim record;
+  v_lead_id uuid;
 begin
   if p_workflow_execution_id is null or length(btrim(p_workflow_execution_id)) = 0 then
     raise exception 'fail_lead_processing: p_workflow_execution_id is required';
@@ -178,28 +179,6 @@ begin
 
   if p_details is null or jsonb_typeof(p_details) is distinct from 'object' then
     raise exception 'fail_lead_processing: p_details must be a JSON object';
-  end if;
-
-  select *
-    into v_audit
-  from public.lead_processing_audit
-  where workflow_execution_id = p_workflow_execution_id
-    and step = 'received'
-    and outcome = 'processing'
-  for update;
-
-  if not found then
-    return false;
-  end if;
-
-  select *
-    into v_lead
-  from public.leads
-  where id = v_audit.lead_id
-  for update;
-
-  if not found then
-    raise exception 'fail_lead_processing: lead % disappeared', v_audit.lead_id;
   end if;
 
   v_bounded_error := left(
@@ -214,31 +193,53 @@ begin
     )
   );
 
-  update public.lead_processing_audit
-  set
-    outcome = 'failed',
-    error_message = nullif(v_bounded_error, ''),
-    details = coalesce(v_bounded_details, '{}'::jsonb)
-  where id = v_audit.id;
+  for v_claim in
+    select lpa.id as audit_id, lpa.lead_id
+    from public.lead_processing_audit lpa
+    where lpa.workflow_execution_id = p_workflow_execution_id
+      and lpa.step = 'received'
+      and lpa.outcome = 'processing'
+    order by lpa.created_at
+    for update of lpa
+  loop
+    select l.id
+      into v_lead_id
+    from public.leads l
+    where l.id = v_claim.lead_id
+    for update;
 
-  update public.leads
-  set automation_state = 'failed'
-  where id = v_audit.lead_id;
+    if not found then
+      raise exception 'fail_lead_processing: lead % disappeared', v_claim.lead_id;
+    end if;
 
-  perform public.transition_lead_status(
-    v_audit.lead_id,
-    'needs_review'::public.lead_status,
-    'automation',
-    null,
-    nullif(v_bounded_error, '')
-  );
+    update public.lead_processing_audit
+    set
+      outcome = 'failed',
+      error_message = nullif(v_bounded_error, ''),
+      details = coalesce(v_bounded_details, '{}'::jsonb)
+    where id = v_claim.audit_id;
 
-  return true;
+    update public.leads
+    set automation_state = 'failed'
+    where id = v_claim.lead_id;
+
+    perform public.transition_lead_status(
+      v_claim.lead_id,
+      'needs_review'::public.lead_status,
+      'automation',
+      null,
+      nullif(v_bounded_error, '')
+    );
+
+    v_affected := v_affected + 1;
+  end loop;
+
+  return v_affected;
 end;
 $$;
 
 comment on function public.fail_lead_processing(text, text, jsonb) is
-  'Marks the open received/processing claim for an execution as failed, sets automation_state=failed, and transitions the lead to needs_review. Returns false when no open claim exists (failure before claim). Stores bounded technical error data only.';
+  'Marks every open received/processing claim for an execution as failed, sets each lead automation_state=failed, and transitions each lead to needs_review. Returns the affected claim count; zero is normal for pre-claim or fully completed executions. Completed claims are untouched.';
 
 revoke all on function public.fail_lead_processing(text, text, jsonb) from public, anon, authenticated;
 grant execute on function public.fail_lead_processing(text, text, jsonb) to service_role;
@@ -328,7 +329,7 @@ end;
 $$;
 
 comment on function public.retry_lead_automation(uuid, uuid) is
-  'Manual recovery for failed automation only. Increments automation_attempt once, sets automation_state=idle, and appends a requeue audit row. Does not delete or rewrite failed audit rows. Stale processing claims must be resolved separately.';
+  'Manual recovery for failed automation only. Increments automation_attempt once, sets automation_state=idle, and appends a requeue audit row while preserving lead status (typically needs_review). Does not delete or rewrite failed audit rows. Stale processing claims must be resolved separately.';
 
 revoke all on function public.retry_lead_automation(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.retry_lead_automation(uuid, uuid) to service_role;

@@ -167,6 +167,7 @@ describe("LeadDetailOperational", () => {
     });
     vi.mocked(retryAdminLeadAutomation).mockResolvedValue({
       ...detailBase,
+      status: "needs_review",
       automation_state: "idle",
       automation_attempt: 2,
     });

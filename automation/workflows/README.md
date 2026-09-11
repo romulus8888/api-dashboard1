@@ -18,8 +18,8 @@ only.
 | Node | Action |
 | --- | --- |
 | `Schedule Trigger` | Runs once per minute |
-| `Supabase — fetch eligible leads` | `GET /rest/v1/leads` with `automation_state=eq.idle` and `status=eq.new` |
-| `Split lead results` | Expands the PostgREST JSON array into one item per lead |
+| `Supabase — fetch eligible leads` | `GET /rest/v1/leads` with `automation_state=eq.idle` and `status=in.(new,needs_review)` |
+| `Expand PostgREST lead array` | Code node: empty array → zero items; multi-row array → one item per lead |
 | `Supabase — claim lead processing` | `POST /rest/v1/rpc/claim_lead_for_processing` |
 | `Claim succeeded?` | Continues only on `true` |
 | `Supabase — transition lead status` | `POST /rest/v1/rpc/transition_lead_status` → `in_progress` |

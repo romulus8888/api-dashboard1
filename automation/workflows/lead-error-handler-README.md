@@ -17,8 +17,9 @@ to `needs_review`, and attempts a Telegram alert.
 `Error Trigger` fans out to **both** nodes in parallel. A Supabase failure does
 not block the Telegram attempt.
 
-`fail_lead_processing` returns `false` when no open claim exists (failure before
-claim) and does not corrupt the lead.
+`fail_lead_processing` returns the affected claim count. `0` is normal when no
+open claim exists (failure before claim or a fully completed execution).
+Completed claims for the same execution id remain untouched.
 
 ## Manual setup
 

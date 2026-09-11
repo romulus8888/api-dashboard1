@@ -18,6 +18,7 @@ describe("phase8 lead automation migration", () => {
     expect(sql).toMatch(/grant execute on function public\.claim_lead_for_processing/i);
     expect(sql).toMatch(/revoke all on function public\.retry_lead_automation/i);
     expect(sql).toMatch(/lead\.created:%s:attempt:%s/);
+    expect(sql).toMatch(/fail_lead_processing[\s\S]*returns integer/i);
   });
 
   it("ships rollback-safe SQL verification with claim, failure, retry, and privilege assertions", () => {
@@ -32,8 +33,9 @@ describe("phase8 lead automation migration", () => {
     expect(verifySql).toMatch(/duplicate claim false/i);
     expect(verifySql).toMatch(/needs_review status history/i);
     expect(verifySql).toMatch(/failure before claim/i);
-    expect(verifySql).toMatch(/second claim uses new key/i);
-    expect(verifySql).toMatch(/failed received rows must remain/i);
+    expect(verifySql).toMatch(/multi-lead execution failure/i);
+    expect(verifySql).toMatch(/needs_review status preserved after retry/i);
+    expect(verifySql).toMatch(/failed needs_review lead to remain unclaimable before retry/i);
     expect(verifySql).toMatch(/stale automation_state=processing/i);
   });
 });
