@@ -5,12 +5,9 @@ set -euo pipefail
 PRIMARY_OPERATOR_ID="22222222-2222-4222-8222-222222222222"
 SECOND_OPERATOR_ID="33333333-3333-4333-8333-333333333333"
 LEAD_ID="44444444-4444-4444-8444-444444444444"
-BLOCK_COORD_LOCK=999999003
 
 cleanup_objects() {
   psql -v ON_ERROR_STOP=1 <<SQL || true
-drop trigger if exists verify_integration_block_lead_status_update on public.leads;
-drop function if exists public.verify_integration_block_lead_status_update();
 delete from public.leads where id = '$LEAD_ID';
 delete from public.operator_profiles where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
 delete from auth.users where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
@@ -43,26 +40,6 @@ values (
   'Disposable integration fixture',
   'new'
 );
-
-create or replace function public.verify_integration_block_lead_status_update()
-returns trigger
-language plpgsql
-set search_path = pg_catalog, pg_temp
-as \$verify_integration_block_lead_status_update\$
-begin
-  if coalesce(pg_catalog.current_setting('verify.block_status_update', true), ''::text) = 'yes'::text then
-    perform pg_catalog.pg_advisory_lock($BLOCK_COORD_LOCK);
-  end if;
-
-  return new;
-end;
-\$verify_integration_block_lead_status_update\$;
-
-drop trigger if exists verify_integration_block_lead_status_update on public.leads;
-create trigger verify_integration_block_lead_status_update
-  before update of status on public.leads
-  for each row
-  execute function public.verify_integration_block_lead_status_update();
 SQL
 
 run_disappearance_case() {
@@ -71,14 +48,31 @@ run_disappearance_case() {
   local prior_changed_by="$3"
   local prior_reason="$4"
   local conn_a_log
+  local fifo_delete_held fifo_delete_release
   conn_a_log="$(mktemp)"
+  fifo_delete_held="$(mktemp -u)"
+  fifo_delete_release="$(mktemp -u)"
+  mkfifo "$fifo_delete_held" "$fifo_delete_release"
 
-  psql -v ON_ERROR_STOP=1 <<SQL >"$conn_a_log" 2>&1 &
+  PGAPPNAME=integration_conn_b psql -v ON_ERROR_STOP=1 <<SQL &
+begin;
+delete from public.leads where id = '$LEAD_ID';
+\echo integration: connection B holds uncommitted delete
+\! echo held > '$fifo_delete_held'
+\! read _ < '$fifo_delete_release'
+commit;
+\echo integration: connection B committed delete
+SQL
+  local conn_b_pid=$!
+
+  read -r _ <"$fifo_delete_held"
+  echo "integration: connection B blocks lead row ($case_label)"
+
+  PGAPPNAME=integration_conn_a psql -v ON_ERROR_STOP=1 <<SQL >"$conn_a_log" 2>&1 &
 begin;
 select pg_catalog.set_config('lead.status_change_source', '$prior_source', true);
 select pg_catalog.set_config('lead.status_changed_by', '$prior_changed_by', true);
 select pg_catalog.set_config('lead.status_change_reason', '$prior_reason', true);
-select pg_catalog.set_config('verify.block_status_update', 'yes', true);
 
 do \$verify_case\$
 declare
@@ -130,11 +124,9 @@ SQL
     if psql -tAc "
       select exists (
         select 1
-        from pg_locks
-        where locktype = 'advisory'
-          and classid = 0
-          and objid = $BLOCK_COORD_LOCK
-          and granted
+        from pg_catalog.pg_stat_activity
+        where application_name = 'integration_conn_a'
+          and wait_event_type = 'Lock'
       );
     " | grep -qx t; then
       break
@@ -142,36 +134,35 @@ SQL
 
     if ! kill -0 "$conn_a_pid" 2>/dev/null; then
       cat "$conn_a_log" >&2
-      echo "connection A exited before status update block ($case_label)" >&2
-      rm -f "$conn_a_log"
+      echo "connection A exited before waiting on row lock ($case_label)" >&2
+      echo release >"$fifo_delete_release"
+      wait "$conn_b_pid" || true
+      rm -f "$conn_a_log" "$fifo_delete_held" "$fifo_delete_release"
       return 1
     fi
   done
 
-  psql -v ON_ERROR_STOP=1 <<SQL
-begin;
-delete from public.leads where id = '$LEAD_ID';
-commit;
-SQL
-
-  psql -v ON_ERROR_STOP=1 -c "select pg_catalog.pg_advisory_unlock($BLOCK_COORD_LOCK);" >/dev/null
+  echo "integration: connection A blocked on row lock ($case_label)"
+  echo release >"$fifo_delete_release"
+  wait "$conn_b_pid"
   wait "$conn_a_pid"
   local conn_a_status=$?
+
   if [[ $conn_a_status -ne 0 ]]; then
     cat "$conn_a_log" >&2
     echo "connection A failed ($case_label)" >&2
-    rm -f "$conn_a_log"
+    rm -f "$conn_a_log" "$fifo_delete_held" "$fifo_delete_release"
     return 1
   fi
 
   if grep -E 'ERROR:|FATAL:' "$conn_a_log" >/dev/null; then
     cat "$conn_a_log" >&2
     echo "connection A reported SQL errors ($case_label)" >&2
-    rm -f "$conn_a_log"
+    rm -f "$conn_a_log" "$fifo_delete_held" "$fifo_delete_release"
     return 1
   fi
 
-  rm -f "$conn_a_log"
+  rm -f "$conn_a_log" "$fifo_delete_held" "$fifo_delete_release"
 
   psql -v ON_ERROR_STOP=1 <<SQL
 insert into public.leads (
