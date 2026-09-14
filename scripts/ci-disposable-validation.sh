@@ -64,6 +64,16 @@ export DISPOSABLE_CI_CONTAINER_NAME="$CONTAINER_NAME"
 export DISPOSABLE_CI_WORKSPACE_ROOT=/workspace
 export DISPOSABLE_CI_HOST_WORKSPACE_ROOT="$ROOT"
 
+log "sanity-check mounted fixtures"
+if ! docker exec "$CONTAINER_NAME" test -f /workspace/supabase/fixtures/disposable-test-prerequisites.sql; then
+  fail 2 "mounted prerequisites file is missing inside container"
+fi
+
+if ! docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -f /workspace/supabase/fixtures/disposable-test-prerequisites.sql; then
+  fail 2 "direct prerequisites apply failed inside container"
+fi
+
 export DISPOSABLE_VALIDATION_TRACK=clean
 run_validate "clean track bootstrap" 10 bootstrap
 
