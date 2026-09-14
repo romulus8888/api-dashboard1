@@ -37,6 +37,8 @@ describe("phase9 demo reset migration", () => {
 
     expect(verifySql).toMatch(/begin;/i);
     expect(verifySql).toMatch(/rollback;/i);
+    expect(verifySql).toMatch(/repeated demo reset verification/i);
+    expect(verifySql).toMatch(/pg_advisory_unlock\(918273645\)/i);
     expect(verifySql).toMatch(/fixture synthetic lead % must be deleted by reset/i);
     expect(verifySql).toMatch(/fixture synthetic history % must cascade on reset/i);
     expect(verifySql).toMatch(/fixture synthetic comment % must cascade on reset/i);

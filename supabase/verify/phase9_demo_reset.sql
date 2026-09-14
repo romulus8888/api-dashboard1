@@ -221,6 +221,52 @@ begin
     raise exception 'rate-limit bucket fixture must survive reset';
   end if;
 
+  raise notice 'OK: first demo reset verification block';
+end $$;
+
+rollback;
+
+-- Repeated reset runs in a separate transaction so advisory locks and seed
+-- replacement assertions do not inherit state from the first verification block.
+begin;
+
+do $$
+declare
+  v_operator_id uuid := '11111111-1111-4111-8111-111111111111';
+  v_non_synthetic_id uuid := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  v_result jsonb;
+  v_group_id uuid;
+  v_second_group_id uuid;
+  v_inserted integer;
+  v_synthetic_count integer;
+  v_expected_seed_count constant integer := 10;
+begin
+  raise notice '=== Phase 9 repeated demo reset verification (transaction will roll back) ===';
+
+  insert into auth.users (id, email)
+  values (v_operator_id, 'phase9-operator@example.com')
+  on conflict (id) do nothing;
+
+  insert into public.operator_profiles (id, display_name, is_active)
+  values
+    (v_operator_id, 'Phase 9 Operator', true)
+  on conflict (id) do update set is_active = excluded.is_active;
+
+  insert into public.leads (
+    id, source, contact_name, contact_email, title, description,
+    is_synthetic, status
+  )
+  values (
+    v_non_synthetic_id,
+    'website', 'Retained Lead', 'retained@example.com', 'Production lead', 'Must survive reset',
+    false, 'new'
+  );
+
+  v_result := public.reset_demo_data(v_operator_id);
+  v_group_id := (v_result ->> 'demo_reset_group_id')::uuid;
+
+  perform pg_catalog.pg_advisory_unlock(918273645);
+
   v_result := public.reset_demo_data(v_operator_id);
   v_second_group_id := (v_result ->> 'demo_reset_group_id')::uuid;
   v_inserted := (v_result ->> 'inserted_count')::integer;

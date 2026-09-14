@@ -21,10 +21,30 @@ require_database_url() {
     exit 1
   fi
 
-  if [[ "${DISPOSABLE_DATABASE_URL}" == *"SUPABASE"* ]] || [[ "${DISPOSABLE_DATABASE_URL}" == *"supabase"* ]]; then
-    echo "Refusing to run: DISPOSABLE_DATABASE_URL must not reference Supabase credentials or hosts." >&2
-    exit 1
-  fi
+  node -e "
+    try {
+      new URL(process.env.DISPOSABLE_DATABASE_URL);
+    } catch {
+      console.error('DISPOSABLE_DATABASE_URL must be a valid URL.');
+      process.exit(1);
+    }
+  "
+}
+
+export_pg_connection_env() {
+  node -e "
+    const url = new URL(process.env.DISPOSABLE_DATABASE_URL);
+    const entries = [
+      ['PGHOST', url.hostname],
+      ['PGPORT', url.port || '5432'],
+      ['PGUSER', decodeURIComponent(url.username)],
+      ['PGPASSWORD', decodeURIComponent(url.password)],
+      ['PGDATABASE', url.pathname.replace(/^\\//, '')],
+    ];
+    for (const [key, value] of entries) {
+      if (value) process.stdout.write(\`export \${key}=\${JSON.stringify(value)}\\n\`);
+    }
+  "
 }
 
 resolve_hostname() {
@@ -73,7 +93,7 @@ require_psql() {
 wait_for_postgres() {
   local attempts=30
   while (( attempts > 0 )); do
-    if psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'select 1' >/dev/null 2>&1; then
+    if psql -v ON_ERROR_STOP=1 -c 'select 1' >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -87,17 +107,24 @@ wait_for_postgres() {
 run_sql_file() {
   local label="$1"
   local file="$2"
+  local log
+  log="$(mktemp)"
   echo "==> $label: $(basename "$file")"
-  if ! psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"; then
+  if ! psql -v ON_ERROR_STOP=1 -f "$file" >"$log" 2>&1; then
+    cat "$log" >&2
     echo "FAILED ${label}: $(basename "$file")" >&2
+    rm -f "$log"
     exit 3
   fi
+  rm -f "$log"
 }
 
 main() {
   require_ack
   require_database_url
   refuse_production_like_target "$(resolve_hostname)"
+  eval "$(export_pg_connection_env)"
+  export PGSSLMODE="${PGSSLMODE:-disable}"
   require_psql
   wait_for_postgres
 

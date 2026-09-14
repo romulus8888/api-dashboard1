@@ -26,7 +26,12 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
       PGSSLMODE: disable
       NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
       NEXT_PUBLIC_SUPABASE_ANON_KEY: disposable-test-anon-key
@@ -61,4 +66,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Disposable SQL migrations and verification
-        run: bash scripts/validate-disposable-database.sh
+        run: |
+          set -euxo pipefail
+          psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
+          bash scripts/validate-disposable-database.sh
