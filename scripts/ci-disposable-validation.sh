@@ -119,8 +119,7 @@ docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1
   -c "select to_regclass('public.jobs') as jobs, to_regclass('public.job_processing_audit') as job_audit"
 
 log "clean track clean-install guard"
-run_validate "clean verify phase11_clean_install.sql" 11 verify-file \
-  "$ROOT/supabase/verify/phase11_clean_install.sql"
+apply_sql_in_container postgres verify "$ROOT/supabase/verify/phase11_clean_install.sql"
 
 log "clean track verify"
 shopt -s nullglob
