@@ -65,5 +65,8 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
+      - name: Ensure Postgres service port is free
+        run: sudo service postgresql stop 2>/dev/null || true
+
       - name: Disposable SQL migrations and verification
         run: bash scripts/ci-disposable-validation.sh
