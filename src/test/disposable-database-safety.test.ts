@@ -38,6 +38,7 @@ describe("disposable database safety gate", () => {
     expect(helper).toMatch(/supabase\.co|supabase\.com/i);
     expect(helper).toMatch(/disposable_psql/);
     expect(helper).toMatch(/unset PGHOST/);
+    expect(helper).toMatch(/PGSSLMODE=disable/);
     expect(helper).toMatch(/wait_for_disposable_postgres/);
   });
 
