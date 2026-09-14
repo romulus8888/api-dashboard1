@@ -14,12 +14,18 @@ restore_transition_lead_status() {
 }
 
 assert_integration_pause_function() {
-  psql -v ON_ERROR_STOP=1 -tAc "
-    select strpos(
-      pg_get_functiondef('public.transition_lead_status(uuid, public.lead_status, text, uuid, text)'::regprocedure),
-      'pg_advisory_lock(999999004)'
-    ) > 0;
-  " | grep -qx t
+  local has_pause
+  has_pause="$(psql -v ON_ERROR_STOP=1 -tAc "
+    select exists (
+      select 1
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+        and p.proname = 'transition_lead_status'
+        and pg_get_functiondef(p.oid) like '%pg_advisory_lock(999999004)%'
+    );
+  ")"
+  [[ "$has_pause" == "t" ]]
 }
 
 cleanup_objects() {
@@ -46,7 +52,12 @@ values
 on conflict (id) do update set is_active = excluded.is_active;
 SQL
 
-psql -v ON_ERROR_STOP=1 -f "$SQL_DIR/transition_lead_status_with_pause.sql" >/dev/null
+if [[ ! -f "$SQL_DIR/transition_lead_status_with_pause.sql" ]]; then
+  echo "missing integration SQL: $SQL_DIR/transition_lead_status_with_pause.sql" >&2
+  exit 1
+fi
+
+psql -v ON_ERROR_STOP=1 -f "$SQL_DIR/transition_lead_status_with_pause.sql"
 
 if ! assert_integration_pause_function; then
   echo "integration pause function was not installed" >&2
