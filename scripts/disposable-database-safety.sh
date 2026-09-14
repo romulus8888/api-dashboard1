@@ -72,6 +72,14 @@ disposable_refuse_production_like_target() {
 }
 
 disposable_require_psql() {
+  if [[ "${DISPOSABLE_PSQL_MODE:-}" == "docker-exec" ]]; then
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "docker is required but was not found in PATH." >&2
+      exit 1
+    fi
+    return 0
+  fi
+
   if ! command -v psql >/dev/null 2>&1; then
     echo "psql is required but was not found in PATH." >&2
     exit 1
@@ -97,10 +105,20 @@ disposable_psql() {
 
   if [[ "${DISPOSABLE_PSQL_MODE:-}" == "docker-exec" ]]; then
     local container="${DISPOSABLE_CI_CONTAINER_NAME:-disposable-postgres}"
+    local workspace_root="${DISPOSABLE_CI_WORKSPACE_ROOT:-/workspace}"
     local database
     database="$(disposable_resolve_database_name)"
     if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
-      docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 < "$2"
+      local host_path="$2"
+      local host_root="${DISPOSABLE_CI_HOST_WORKSPACE_ROOT:-}"
+      local container_path
+      if [[ -n "$host_root" && "$host_path" == "$host_root"/* ]]; then
+        container_path="${workspace_root}/${host_path#"$host_root"/}"
+      else
+        docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 < "$host_path"
+        return
+      fi
+      docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 -f "$container_path"
       return
     fi
     docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 "$@"
