@@ -382,12 +382,12 @@ set search_path = pg_catalog, pg_temp
 as $$
 begin
   if new.status = 'won' then
-    new.won_at := pg_catalog.coalesce(new.won_at, pg_catalog.now());
+    new.won_at := coalesce(new.won_at, pg_catalog.now());
     new.lost_at := null;
     new.loss_reason := null;
     new.duplicate_of_lead_id := null;
   elsif new.status = 'lost' then
-    new.lost_at := pg_catalog.coalesce(new.lost_at, pg_catalog.now());
+    new.lost_at := coalesce(new.lost_at, pg_catalog.now());
     new.won_at := null;
     new.duplicate_of_lead_id := null;
   elsif new.status = 'duplicate' then
