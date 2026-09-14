@@ -16,6 +16,8 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -24,8 +26,8 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
-      PGHOST: postgres
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PGHOST: localhost
       PGPORT: 5432
       PGUSER: postgres
       PGPASSWORD: postgres
@@ -64,4 +66,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
       - name: Disposable SQL migrations and verification
-        run: bash scripts/ci-disposable-validation.sh
+        run: |
+          set -euxo pipefail
+          export DISPOSABLE_VALIDATION_TRACK=clean
+          psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
+          bash scripts/validate-disposable-database.sh bootstrap
+          for verify in supabase/verify/*.sql; do
+            bash scripts/validate-disposable-database.sh verify-file "$verify"
+          done
+          bash scripts/validate-disposable-database.sh integration
+          psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
+          psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
+          psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
+          export DISPOSABLE_VALIDATION_TRACK=legacy
+          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
+          bash scripts/validate-disposable-database.sh all

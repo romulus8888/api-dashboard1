@@ -116,7 +116,9 @@ describe("phase10 release validation", () => {
     expect(workflow).toMatch(/npm test/);
     expect(workflow).toMatch(/npm run lint/);
     expect(workflow).toMatch(/npm run build/);
-    expect(workflow).toMatch(/ci-disposable-validation\.sh/);
+    expect(workflow).toMatch(/validate-disposable-database\.sh bootstrap/);
+    expect(workflow).toMatch(/DISPOSABLE_VALIDATION_TRACK=legacy/);
+    expect(workflow).toMatch(/postgres_legacy/);
     const ciDisposable = readFileSync(join(ROOT, "scripts/ci-disposable-validation.sh"), "utf8");
     expect(ciDisposable).toMatch(/postgres:16/);
     expect(ciDisposable).toMatch(/DISPOSABLE_VALIDATION_TRACK=clean/);

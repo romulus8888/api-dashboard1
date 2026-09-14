@@ -1,29 +1,20 @@
 #!/usr/bin/env bash
 # CI-only disposable PostgreSQL validation for clean and legacy tracks.
 # Uses the workflow postgres:16 service (host psql); never touches hosted Supabase.
+#
+# This script mirrors .github/workflows/ci.yml so local review stays in one place.
+# GitHub Actions runs the same steps inline in the workflow job.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LEGACY_URL="${DISPOSABLE_CI_LEGACY_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres_legacy}"
 PG_IMAGE="${DISPOSABLE_CI_POSTGRES_IMAGE:-postgres:16}"
+LEGACY_URL="${DISPOSABLE_CI_LEGACY_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/postgres_legacy}"
 
 export DISPOSABLE_TEST_ACK=yes
 export DISPOSABLE_VALIDATION_TRACK=clean
 
 echo "==> [ci-disposable] waiting for ${PG_IMAGE} postgres service"
-attempts=30
-while [ "$attempts" -gt 0 ]; do
-  if psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready' >/dev/null 2>&1; then
-    break
-  fi
-  attempts=$((attempts - 1))
-  sleep 1
-done
-
-if [ "$attempts" -eq 0 ]; then
-  echo "postgres service is not ready" >&2
-  exit 2
-fi
+psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
 
 echo "==> [ci-disposable] clean track bootstrap"
 bash "$ROOT/scripts/validate-disposable-database.sh" bootstrap
