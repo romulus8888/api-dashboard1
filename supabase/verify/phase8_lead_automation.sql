@@ -334,6 +334,17 @@ begin
   -- --------------------------------------------------------------------------
   -- Illegal / concurrent retry behavior
   -- --------------------------------------------------------------------------
+  select automation_state into v_lead from public.leads where id = v_lead_id;
+
+  if v_lead.automation_state is distinct from 'processing' then
+    raise exception
+      'precondition: lead % must be processing before illegal-retry test, got %',
+      v_lead_id,
+      v_lead.automation_state;
+  end if;
+
+  perform public.clear_lead_status_attribution_gucs();
+
   begin
     perform public.retry_lead_automation(v_lead_id, v_operator_id);
     raise exception 'expected retry while processing to fail';

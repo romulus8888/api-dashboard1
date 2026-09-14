@@ -182,14 +182,14 @@ begin
   end if;
 
   v_bounded_error := left(
-    regexp_replace(btrim(coalesce(p_error_message, '')), '\s+', ' ', 'g'),
+    regexp_replace(btrim(coalesce(p_error_message, ''::text)), '\s+', ' ', 'g'),
     300
   );
 
   v_bounded_details := jsonb_strip_nulls(
     jsonb_build_object(
-      'source', left(coalesce(p_details ->> 'source', ''), 64),
-      'failed_node', left(coalesce(p_details ->> 'failed_node', ''), 128)
+      'source', left(coalesce(p_details ->> 'source', ''::text), 64),
+      'failed_node', left(coalesce(p_details ->> 'failed_node', ''::text), 128)
     )
   );
 
@@ -278,7 +278,7 @@ begin
     raise exception 'retry_lead_automation: lead % not found', p_lead_id;
   end if;
 
-  if v_lead.automation_state = 'processing' then
+  if v_lead.automation_state is not distinct from 'processing' then
     raise exception
       'retry_lead_automation: lead % has stale automation_state=processing; investigate the open claim before retrying',
       p_lead_id;
