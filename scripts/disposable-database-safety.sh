@@ -97,7 +97,7 @@ disposable_psql() {
 
 wait_for_disposable_postgres() {
   local attempts=30
-  while (( attempts > 0 )); do
+  while [ "$attempts" -gt 0 ]; do
     if disposable_psql -c 'select 1' >/dev/null 2>&1; then
       return 0
     fi

@@ -118,8 +118,8 @@ describe("phase10 release validation", () => {
     expect(workflow).toMatch(/npm run lint/);
     expect(workflow).toMatch(/npm run build/);
     expect(workflow).toMatch(/validate-disposable-database\.sh/);
-    expect(workflow).toMatch(/DISPOSABLE_VALIDATION_TRACK: clean/);
-    expect(workflow).toMatch(/DISPOSABLE_VALIDATION_TRACK: legacy/);
+    expect(workflow).toMatch(/DISPOSABLE_VALIDATION_TRACK=clean/);
+    expect(workflow).toMatch(/DISPOSABLE_VALIDATION_TRACK=legacy/);
     expect(workflow).toMatch(/validate-disposable-database\.sh bootstrap/);
     expect(workflow).toMatch(/validate-disposable-database\.sh integration/);
     expect(workflow).toMatch(/validate-disposable-database\.sh all/);
