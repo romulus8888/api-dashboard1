@@ -593,9 +593,9 @@ declare
   v_changed_by_raw text;
 begin
   begin
-    v_change_source := pg_catalog.coalesce(
+    v_change_source := coalesce(
       nullif(pg_catalog.current_setting('lead.status_change_source', true), ''::text),
-      'sql'
+      'sql'::text
     );
 
     v_reason := nullif(pg_catalog.current_setting('lead.status_change_reason', true), ''::text);
