@@ -11,7 +11,6 @@ cleanup_objects() {
   psql -v ON_ERROR_STOP=1 <<SQL || true
 drop trigger if exists verify_integration_pause_before_update on public.leads;
 drop function if exists public.verify_integration_pause_before_update();
-drop table if exists public.verify_integration_pause;
 delete from public.leads where id = '$LEAD_ID';
 delete from public.operator_profiles where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
 delete from auth.users where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
@@ -32,19 +31,12 @@ values
   ('$SECOND_OPERATOR_ID', 'Integration Second', true)
 on conflict (id) do update set is_active = excluded.is_active;
 
-create table if not exists public.verify_integration_pause (
-  slot integer primary key
-);
-
-truncate table public.verify_integration_pause;
-
 create or replace function public.verify_integration_pause_before_update()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, pg_temp
 as \$verify_integration_pause_before_update\$
 begin
-  insert into public.verify_integration_pause (slot) values (1);
   perform pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
   return new;
 end;
@@ -68,7 +60,14 @@ declare
   i integer;
 begin
   for i in 1..300 loop
-    if exists (select 1 from public.verify_integration_pause where slot = 1) then
+    if exists (
+      select 1
+      from pg_catalog.pg_locks
+      where locktype = 'advisory'
+        and classid = 0
+        and objid = $UPDATE_COORD_LOCK
+        and granted
+    ) then
       return;
     end if;
     perform pg_sleep(0.01);
@@ -88,7 +87,6 @@ run_disappearance_case() {
   conn_a_log="$(mktemp)"
 
   psql -v ON_ERROR_STOP=1 <<SQL
-truncate table public.verify_integration_pause;
 insert into public.leads (
   id, source, contact_name, contact_email, title, description, status
 )
