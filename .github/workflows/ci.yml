@@ -16,8 +16,6 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
-        ports:
-          - 5433:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -26,9 +24,9 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
-      PGHOST: 127.0.0.1
-      PGPORT: 5433
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      PGHOST: postgres
+      PGPORT: 5432
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: postgres
