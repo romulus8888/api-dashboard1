@@ -65,6 +65,9 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
+      - name: Normalize shell script line endings
+        run: python scripts/normalize_shell_lf.py
+
       - name: Disposable SQL migrations and verification
         run: |
           # scripts/ci-disposable-validation.sh
