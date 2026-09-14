@@ -11,6 +11,7 @@ if [[ -n "${DISPOSABLE_DATABASE_SAFETY_LOADED:-}" ]]; then
   return 0
 fi
 DISPOSABLE_DATABASE_SAFETY_LOADED=1
+DISPOSABLE_SAFETY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 disposable_require_ack() {
   if [[ "${DISPOSABLE_TEST_ACK:-}" != "yes" ]]; then
@@ -128,10 +129,8 @@ disposable_psql() {
     return
   fi
 
-  local pg_env_helper
-  pg_env_helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/disposable-pg-env.mjs"
   unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
-  eval "$(node "$pg_env_helper")"
+  eval "$(node "$DISPOSABLE_SAFETY_DIR/disposable-pg-env.mjs")"
   psql -v ON_ERROR_STOP=1 "$@"
 }
 
