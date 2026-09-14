@@ -147,8 +147,10 @@ begin
     raise exception 'non-synthetic lead % must survive reset', v_non_synthetic_id;
   end if;
 
-  if v_jobs_fixture and not exists (select 1 from public.jobs where id = v_job_id) then
-    raise exception 'legacy jobs row % must survive reset', v_job_id;
+  if v_jobs_fixture then
+    if not exists (select 1 from public.jobs where id = v_job_id) then
+      raise exception 'legacy jobs row % must survive reset', v_job_id;
+    end if;
   end if;
 
   if not exists (select 1 from public.operator_profiles where id = v_operator_id) then
