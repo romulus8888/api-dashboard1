@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { RefreshCw, Search, X } from "lucide-react";
 
 import { Select, type SelectOption } from "@/components/ui/select";
@@ -17,6 +18,7 @@ export interface JobsFiltersProps {
   onRefresh: () => void;
   refreshDisabled: boolean;
   refreshing: boolean;
+  demoResetAction?: ReactNode;
 }
 
 export function JobsFilters({
@@ -26,6 +28,7 @@ export function JobsFilters({
   onRefresh,
   refreshDisabled,
   refreshing,
+  demoResetAction,
 }: JobsFiltersProps) {
   const { dictionary } = useLocaleContext();
   const labels = dictionary.leads.filters;
@@ -105,6 +108,8 @@ export function JobsFilters({
             {labels.reset}
           </button>
         ) : null}
+
+        {demoResetAction}
 
         <button
           type="button"

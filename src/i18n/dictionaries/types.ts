@@ -224,6 +224,19 @@ export interface Dictionary {
       automationRetryConflict: string;
       automationRetryFailed: string;
     };
+    demoReset: {
+      button: string;
+      title: string;
+      description: string;
+      confirm: string;
+      cancel: string;
+      pending: string;
+      successTitle: string;
+      successDescription: string;
+      errorTitle: string;
+      errorConflict: string;
+      errorFailed: string;
+    };
     toasts: {
       statusUpdatedTitle: string;
       statusUpdatedDescription: string;

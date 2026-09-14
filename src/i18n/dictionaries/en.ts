@@ -239,6 +239,20 @@ export const en: Dictionary = {
       automationRetryConflict: "Automation cannot be retried right now. Refresh and try again.",
       automationRetryFailed: "Could not retry automation.",
     },
+    demoReset: {
+      button: "Reset demo data",
+      title: "Reset synthetic demo data?",
+      description:
+        "This replaces only synthetic demo leads with a fresh training dataset. Real leads, operators, and sign-in accounts are not deleted.",
+      confirm: "Reset synthetic data",
+      cancel: "Cancel",
+      pending: "Resetting demo data…",
+      successTitle: "Demo data reset",
+      successDescription: "Removed {deleted} synthetic leads and inserted {inserted} demo leads.",
+      errorTitle: "Demo reset failed",
+      errorConflict: "Another reset is already running. Wait a moment and try again.",
+      errorFailed: "Could not reset demo data. Try again or sign in again if your session expired.",
+    },
     toasts: {
       statusUpdatedTitle: "Status updated",
       statusUpdatedDescription: "“{title}” is now {status}.",

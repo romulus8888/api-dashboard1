@@ -6,6 +6,7 @@ import type {
   LeadStatus,
   LeadStatusHistoryEntry,
 } from "@/types/lead";
+import type { DemoResetResult } from "@/types/demo-reset";
 import type { LeadMetrics } from "@/types/metrics";
 
 export type AdminLeadListItem = Pick<
@@ -90,6 +91,10 @@ interface LeadCommentResponse {
 
 interface MetricsResponse {
   data: LeadMetrics;
+}
+
+interface DemoResetResponse {
+  data: DemoResetResult;
 }
 
 async function parseErrorCode(response: Response): Promise<AdminLeadsErrorCode> {
@@ -213,6 +218,15 @@ export async function updateAdminLeadStatus(
   const payload = await requestJson<LeadDetailResponse>(`/api/admin/leads/${id}/status`, {
     method: "POST",
     body: JSON.stringify(reason ? { status, reason } : { status }),
+  });
+
+  return payload.data;
+}
+
+export async function resetAdminDemoData(): Promise<DemoResetResult> {
+  const payload = await requestJson<DemoResetResponse>("/api/admin/demo/reset", {
+    method: "POST",
+    body: JSON.stringify({ confirm: "reset-synthetic-demo" }),
   });
 
   return payload.data;

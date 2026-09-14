@@ -25,6 +25,12 @@ configured) marks the open audit row as `failed` and can send a Telegram alert.
 RPCs. Operators can manually retry failed automation from the authenticated
 dashboard without deleting audit history.
 
+**Phase 9 (demo reset):** Active operators can replace only `is_synthetic=true`
+leads through `POST /api/admin/demo/reset`, which calls the `reset_demo_data()`
+RPC with a verified operator id. Non-synthetic leads, operators, auth users, and
+rate-limit buckets are never deleted. Concurrent resets are serialized and return
+HTTP 409 when another reset is in progress.
+
 ## Business flow
 
 1. A client submits a project request on the Next.js form (title, description,
@@ -182,6 +188,7 @@ Then import the two workflows and connect credentials:
 | n8n lead intake workflow JSON | Yes; **inactive** after import | Hosted n8n / public webhook |
 | n8n lead error workflow + Telegram JSON | Yes; **inactive**; Error Workflow assigned manually | — |
 | Manual automation retry (dashboard API + RPC) | Yes | Automatic retry |
+| Synthetic demo reset (dashboard API + RPC) | Yes | Scheduled reset |
 | Automated tests (Vitest) | Yes | — |
 | CI pipeline | No | Add hosted verification in CI |
 | Public webhook / Kafka | No | Future iteration |
@@ -229,6 +236,34 @@ limitation above.
 **4. Telegram alert (requires Telegram credential in n8n).** The error handler can
 send a message with workflow name, execution ID, failing node, and a truncated
 error string — no client payload or secrets.
+
+**5. Synthetic demo reset (local or hosted Supabase, human operator).**
+
+Local database verification (no credentials in repo):
+
+```bash
+# After applying all supabase/migrations through 20260912140000_create_reset_demo_data_rpc.sql
+psql "$DATABASE_URL" -f supabase/verify/phase9_demo_reset.sql
+```
+
+Expected: notices ending with `OK: demo reset verification`; transaction rolls back.
+
+Hosted deployment (human steps, no automated access from this repo):
+
+1. Apply `supabase/migrations/20260912140000_create_reset_demo_data_rpc.sql` in the Supabase SQL editor or via your migration pipeline.
+2. Run `supabase/verify/phase9_demo_reset.sql` against a disposable database or staging project before production.
+3. Deploy the Next.js app revision that includes `POST /api/admin/demo/reset` and the dashboard **Reset demo data** action.
+4. Sign in as an active operator, open the dashboard, confirm the dialog, and verify leads/metrics refresh. Only synthetic rows should change.
+
+Browser/API smoke (authenticated session required):
+
+```bash
+curl -i -X POST "http://localhost:3000/api/admin/demo/reset" \
+  -H "content-type: application/json" \
+  -H "origin: http://localhost:3000" \
+  --cookie "your-session-cookie" \
+  -d '{"confirm":"reset-synthetic-demo"}'
+```
 
 ## Documentation
 

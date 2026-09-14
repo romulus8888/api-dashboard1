@@ -278,6 +278,16 @@ export interface Database {
         };
         Returns: LeadRow;
       };
+      reset_demo_data: {
+        Args: {
+          p_operator_id: string;
+        };
+        Returns: {
+          demo_reset_group_id: string;
+          deleted_count: number;
+          inserted_count: number;
+        };
+      };
     };
     Enums: {
       lead_status: LeadStatus;

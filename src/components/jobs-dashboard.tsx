@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { DemoResetAction } from "@/components/demo-reset-action";
 import { JobDetailDrawer } from "@/components/job-detail-drawer";
 import { JobsEmptyState } from "@/components/jobs-empty-state";
 import { JobsErrorState } from "@/components/jobs-error-state";
@@ -126,6 +127,11 @@ export function JobsDashboardContent({ loadingLabel }: { loadingLabel: string })
     return dictionary.leads.error.loadFailed;
   }, [dictionary, loadError]);
 
+  const handleDemoResetComplete = useCallback(async () => {
+    setSelectedLeadId(null);
+    await Promise.all([refresh(), reloadMetrics()]);
+  }, [refresh, reloadMetrics]);
+
   const handleRefresh = useCallback(async () => {
     try {
       await refresh();
@@ -214,6 +220,13 @@ export function JobsDashboardContent({ loadingLabel }: { loadingLabel: string })
           onRefresh={() => void handleRefresh()}
           refreshDisabled={loading || refreshing}
           refreshing={refreshing}
+          demoResetAction={
+            <DemoResetAction
+              disabled={loading || refreshing}
+              onSessionExpired={handleSessionExpired}
+              onResetComplete={handleDemoResetComplete}
+            />
+          }
         />
 
         {resolvedLoadError ? (
