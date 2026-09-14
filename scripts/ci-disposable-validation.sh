@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTAINER_NAME="${DISPOSABLE_CI_CONTAINER_NAME:-disposable-postgres}"
 PG_IMAGE="${DISPOSABLE_CI_POSTGRES_IMAGE:-postgres:16}"
 PG_PASSWORD="${DISPOSABLE_CI_POSTGRES_PASSWORD:-postgres}"
-PG_PORT="${DISPOSABLE_CI_POSTGRES_PORT:-5432}"
+PG_PORT="${DISPOSABLE_CI_POSTGRES_PORT:-5433}"
 BASE_URL="postgresql://postgres:${PG_PASSWORD}@127.0.0.1:${PG_PORT}/postgres"
 LEGACY_URL="postgresql://postgres:${PG_PASSWORD}@127.0.0.1:${PG_PORT}/postgres_legacy"
 
@@ -19,9 +19,29 @@ log() {
 }
 
 fail() {
+  local status="${1:-2}"
+  shift || true
   echo "FAILED [ci-disposable] $*" >&2
   docker logs "$CONTAINER_NAME" 2>&1 | tail -50 >&2 || true
-  exit 2
+  exit "$status"
+}
+
+run_validate() {
+  local label="$1"
+  local status_code="$2"
+  shift 2
+  log "$label"
+  local output
+  output="$(mktemp)"
+  if ! bash "$ROOT/scripts/validate-disposable-database.sh" "$@" >"$output" 2>&1; then
+    cat "$output" >&2
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+      echo "::error title=${label}::$(grep -E 'FAILED|ERROR|PostgreSQL|Refusing' "$output" | head -5 | tr '\n' ' ')" >&2
+    fi
+    rm -f "$output"
+    fail "$status_code" "$label"
+  fi
+  rm -f "$output"
 }
 
 trap cleanup_container EXIT
@@ -43,7 +63,7 @@ while [ "$attempts" -gt 0 ]; do
 done
 
 if [ "$attempts" -eq 0 ]; then
-  fail "postgres container did not become ready"
+  fail 2 "postgres container did not become ready"
 fi
 
 export DISPOSABLE_TEST_ACK=yes
@@ -55,27 +75,24 @@ export PGPASSWORD="$PG_PASSWORD"
 export PGDATABASE=postgres
 export PGSSLMODE=disable
 
-log "clean track bootstrap"
 export DISPOSABLE_VALIDATION_TRACK=clean
-bash "$ROOT/scripts/validate-disposable-database.sh" bootstrap
+run_validate "clean track bootstrap" 10 bootstrap
 
 log "clean track verify"
 shopt -s nullglob
 for verify in "$ROOT"/supabase/verify/*.sql; do
-  bash "$ROOT/scripts/validate-disposable-database.sh" verify-file "$verify"
+  run_validate "clean track verify $(basename "$verify")" 11 verify-file "$verify"
 done
 
-log "clean track integration"
-bash "$ROOT/scripts/validate-disposable-database.sh" integration
+run_validate "clean track integration" 12 integration
 
 log "preparing legacy database"
 psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
 psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
 psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
 
-log "legacy track validation"
 export DISPOSABLE_VALIDATION_TRACK=legacy
 export DISPOSABLE_DATABASE_URL="$LEGACY_URL"
-bash "$ROOT/scripts/validate-disposable-database.sh" all
+run_validate "legacy track validation" 13 all
 
 log "clean and legacy disposable validation passed"
