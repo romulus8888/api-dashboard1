@@ -136,15 +136,21 @@ disposable_psql() {
 
 wait_for_disposable_postgres() {
   local attempts=30
+  local error_log
+  error_log="$(mktemp)"
   while [ "$attempts" -gt 0 ]; do
-    if disposable_psql -c 'select 1' >/dev/null 2>&1; then
+    if disposable_psql -c 'select 1' >"$error_log" 2>&1; then
+      rm -f "$error_log"
       return 0
     fi
     sleep 1
     attempts=$((attempts - 1))
   done
 
-  echo "PostgreSQL is not reachable at DISPOSABLE_DATABASE_URL." >&2
+  cat "$error_log" >&2 || true
+  echo "PostgreSQL is not reachable at DISPOSABLE_DATABASE_URL=${DISPOSABLE_DATABASE_URL:-unset}." >&2
+  echo "DISPOSABLE_SAFETY_DIR=${DISPOSABLE_SAFETY_DIR:-unset}" >&2
+  rm -f "$error_log"
   exit 2
 }
 
