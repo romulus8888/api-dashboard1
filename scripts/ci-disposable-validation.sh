@@ -138,7 +138,7 @@ docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1
 docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
   -c 'drop database if exists postgres_legacy'
 docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
-  -c 'create database postgres_legacy'
+  -c 'create database postgres_legacy template template0'
 
 export DISPOSABLE_VALIDATION_TRACK=legacy
 export DISPOSABLE_DATABASE_URL="$LEGACY_URL"
