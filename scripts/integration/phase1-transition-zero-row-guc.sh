@@ -2,15 +2,19 @@
 # Two-connection disposable integration: zero-row disappearance restores attribution GUCs.
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PRIMARY_OPERATOR_ID="22222222-2222-4222-8222-222222222222"
 SECOND_OPERATOR_ID="33333333-3333-4333-8333-333333333333"
 LEAD_ID="44444444-4444-4444-8444-444444444444"
 UPDATE_COORD_LOCK=999999004
 
+restore_transition_lead_status() {
+  psql -v ON_ERROR_STOP=1 -f "$ROOT/supabase/migrations/20260911140000_atomic_lost_reason_in_transition.sql" >/dev/null
+}
+
 cleanup_objects() {
+  restore_transition_lead_status || true
   psql -v ON_ERROR_STOP=1 <<SQL || true
-drop trigger if exists verify_integration_pause_before_update on public.leads;
-drop function if exists public.verify_integration_pause_before_update();
 delete from public.leads where id = '$LEAD_ID';
 delete from public.operator_profiles where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
 delete from auth.users where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
@@ -31,51 +35,113 @@ values
   ('$SECOND_OPERATOR_ID', 'Integration Second', true)
 on conflict (id) do update set is_active = excluded.is_active;
 
-create or replace function public.verify_integration_pause_before_update()
-returns trigger
+create or replace function public.transition_lead_status(
+  p_lead_id uuid,
+  p_to_status public.lead_status,
+  p_change_source text,
+  p_changed_by uuid default null,
+  p_reason text default null
+)
+returns public.leads
 language plpgsql
+security invoker
 set search_path = pg_catalog, pg_temp
-as \$verify_integration_pause_before_update\$
+as \$integration_transition_lead_status\$
+declare
+  v_lead public.leads;
+  v_prev_source text;
+  v_prev_changed_by text;
+  v_prev_reason text;
 begin
-  perform pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
-  return new;
-end;
-\$verify_integration_pause_before_update\$;
+  if p_lead_id is null then
+    raise exception 'transition_lead_status: p_lead_id is required';
+  end if;
 
-drop trigger if exists verify_integration_pause_before_update on public.leads;
-create trigger verify_integration_pause_before_update
-  before update of status on public.leads
-  for each row
-  execute function public.verify_integration_pause_before_update();
+  if p_change_source is null or length(btrim(p_change_source)) = 0 then
+    raise exception 'transition_lead_status: p_change_source must be a non-empty string';
+  end if;
+
+  perform public.validate_lead_status_actor(p_changed_by);
+
+  select *
+    into v_lead
+  from public.leads
+  where id = p_lead_id;
+
+  if not found then
+    raise exception 'transition_lead_status: lead % not found', p_lead_id;
+  end if;
+
+  if v_lead.status is not distinct from p_to_status then
+    return v_lead;
+  end if;
+
+  v_prev_source := pg_catalog.current_setting('lead.status_change_source', true);
+  v_prev_changed_by := pg_catalog.current_setting('lead.status_changed_by', true);
+  v_prev_reason := pg_catalog.current_setting('lead.status_change_reason', true);
+
+  begin
+    perform pg_catalog.set_config('lead.status_change_source', btrim(p_change_source), true);
+    perform pg_catalog.set_config('lead.status_changed_by', coalesce(p_changed_by::text, ''::text), true);
+    perform pg_catalog.set_config('lead.status_change_reason', coalesce(p_reason, ''::text), true);
+
+    if coalesce(pg_catalog.current_setting('verify.integration_pause', true), ''::text) = 'yes'::text then
+      perform pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
+    end if;
+
+    update public.leads
+    set
+      status = p_to_status,
+      loss_reason = case
+        when p_to_status = 'lost'::public.lead_status
+          then nullif(btrim(coalesce(p_reason, ''::text)), ''::text)
+        else loss_reason
+      end
+    where id = p_lead_id
+    returning * into v_lead;
+
+    if not found then
+      raise exception 'transition_lead_status: lead % disappeared during update', p_lead_id;
+    end if;
+
+    perform pg_catalog.set_config('lead.status_change_source', coalesce(v_prev_source, ''::text), true);
+    perform pg_catalog.set_config('lead.status_changed_by', coalesce(v_prev_changed_by, ''::text), true);
+    perform pg_catalog.set_config('lead.status_change_reason', coalesce(v_prev_reason, ''::text), true);
+
+    return v_lead;
+  exception
+    when others then
+      perform pg_catalog.set_config('lead.status_change_source', coalesce(v_prev_source, ''::text), true);
+      perform pg_catalog.set_config('lead.status_changed_by', coalesce(v_prev_changed_by, ''::text), true);
+      perform pg_catalog.set_config('lead.status_change_reason', coalesce(v_prev_reason, ''::text), true);
+      raise;
+  end;
+end;
+\$integration_transition_lead_status\$;
 SQL
 
 wait_for_update_pause() {
   local case_label="$1"
-  psql -v ON_ERROR_STOP=1 <<SQL || {
-    echo "timed out waiting for transition update pause ($case_label)" >&2
-    return 1
-  }
+  if ! psql -v ON_ERROR_STOP=1 <<SQL
 do \$wait_for_update_pause\$
 declare
   i integer;
 begin
   for i in 1..300 loop
-    if exists (
-      select 1
-      from pg_catalog.pg_locks
-      where locktype = 'advisory'
-        and classid = 0
-        and objid = $UPDATE_COORD_LOCK
-        and granted
-    ) then
+    if not pg_catalog.pg_try_advisory_lock($UPDATE_COORD_LOCK) then
       return;
     end if;
+    perform pg_catalog.pg_advisory_unlock($UPDATE_COORD_LOCK);
     perform pg_sleep(0.01);
   end loop;
   raise exception 'timed out waiting for transition update pause';
 end;
 \$wait_for_update_pause\$;
 SQL
+  then
+    echo "timed out waiting for transition update pause ($case_label)" >&2
+    return 1
+  fi
 }
 
 run_disappearance_case() {
@@ -109,6 +175,7 @@ set local application_name = 'integration_conn_a';
 select pg_catalog.set_config('lead.status_change_source', '$prior_source', true);
 select pg_catalog.set_config('lead.status_changed_by', '$prior_changed_by', true);
 select pg_catalog.set_config('lead.status_change_reason', '$prior_reason', true);
+select pg_catalog.set_config('verify.integration_pause', 'yes', true);
 
 do \$verify_case\$
 declare
@@ -159,6 +226,7 @@ SQL
   if ! wait_for_update_pause "$case_label"; then
     kill "$conn_a_pid" 2>/dev/null || true
     wait "$conn_a_pid" 2>/dev/null || true
+    cat "$conn_a_log" >&2
     rm -f "$conn_a_log"
     return 1
   fi
