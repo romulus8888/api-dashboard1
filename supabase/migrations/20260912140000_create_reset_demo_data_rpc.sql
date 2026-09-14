@@ -24,7 +24,7 @@ begin
 
   perform public.validate_active_operator_assignment(p_operator_id);
 
-  if not pg_catalog.pg_try_advisory_lock(918273645) then
+  if not pg_catalog.pg_try_advisory_xact_lock(918273645) then
     raise exception 'reset_demo_data: another reset is already in progress';
   end if;
 
@@ -239,8 +239,6 @@ begin
   );
   v_inserted_count := v_inserted_count + 1;
 
-  perform pg_catalog.pg_advisory_unlock(918273645);
-
   return jsonb_build_object(
     'demo_reset_group_id', v_group_id,
     'deleted_count', v_deleted_count,
@@ -248,13 +246,12 @@ begin
   );
 exception
   when others then
-    perform pg_catalog.pg_advisory_unlock(918273645);
     raise;
 end;
 $$;
 
 comment on function public.reset_demo_data(uuid) is
-  'Admin-only synthetic demo reset. Deletes is_synthetic=true leads (cascade history/comments/audit), then seeds a fixed industry-neutral dataset under one demo_reset_group_id. Requires an active operator id and serializes concurrent resets.';
+  'Admin-only synthetic demo reset. Deletes is_synthetic=true leads (cascade history/comments/audit), then seeds a fixed industry-neutral dataset under one demo_reset_group_id. Requires an active operator id and serializes concurrent resets with a transaction-scoped advisory lock held until commit/rollback.';
 
 revoke all on function public.reset_demo_data(uuid) from public, anon, authenticated;
 grant execute on function public.reset_demo_data(uuid) to service_role;

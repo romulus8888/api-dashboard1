@@ -67,15 +67,15 @@ begin
     end if;
 
     perform pg_catalog.set_config('lead.status_change_source', coalesce(v_prev_source, ''::text), true);
-    perform pg_catalog.set_config('lead.status_changed_by', '', true);
-    perform pg_catalog.set_config('lead.status_change_reason', '', true);
+    perform pg_catalog.set_config('lead.status_changed_by', coalesce(v_prev_changed_by, ''::text), true);
+    perform pg_catalog.set_config('lead.status_change_reason', coalesce(v_prev_reason, ''::text), true);
 
     return v_lead;
   exception
     when others then
       perform pg_catalog.set_config('lead.status_change_source', coalesce(v_prev_source, ''::text), true);
-      perform pg_catalog.set_config('lead.status_changed_by', '', true);
-      perform pg_catalog.set_config('lead.status_change_reason', '', true);
+      perform pg_catalog.set_config('lead.status_changed_by', coalesce(v_prev_changed_by, ''::text), true);
+      perform pg_catalog.set_config('lead.status_change_reason', coalesce(v_prev_reason, ''::text), true);
       raise;
   end;
 end;

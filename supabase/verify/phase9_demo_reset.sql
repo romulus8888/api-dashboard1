@@ -226,8 +226,8 @@ end $$;
 
 rollback;
 
--- Repeated reset runs in a separate transaction so advisory locks and seed
--- replacement assertions do not inherit state from the first verification block.
+-- Repeated reset runs in a separate transaction so transaction-scoped advisory
+-- locks and seed replacement assertions do not inherit state from the first block.
 begin;
 
 do $$
@@ -264,6 +264,10 @@ begin
 
   v_result := public.reset_demo_data(v_operator_id);
   v_group_id := (v_result ->> 'demo_reset_group_id')::uuid;
+
+  if not pg_catalog.pg_try_advisory_lock(918273645) then
+    raise exception 'reset_demo_data must use transaction-scoped advisory locks, not session locks';
+  end if;
 
   perform pg_catalog.pg_advisory_unlock(918273645);
 

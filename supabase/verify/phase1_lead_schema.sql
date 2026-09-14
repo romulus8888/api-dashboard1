@@ -440,13 +440,142 @@ begin
   -- --------------------------------------------------------------------------
   -- 7. GUC attribution lifecycle
   -- --------------------------------------------------------------------------
+  create or replace function public.phase1_verify_force_transition_fail()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+  begin
+    if coalesce(pg_catalog.current_setting('phase1.force_transition_fail', true), ''::text) = 'yes'::text then
+      raise exception 'phase1 forced transition failure';
+    end if;
+
+    return new;
+  end;
+  $$;
+
+  drop trigger if exists phase1_verify_force_transition_fail on public.leads;
+  create trigger phase1_verify_force_transition_fail
+    before update of status on public.leads
+    for each row
+    execute function public.phase1_verify_force_transition_fail();
+
   perform set_config('lead.status_change_source', 'prior-context', true);
+  perform set_config('lead.status_changed_by', v_second_operator_id::text, true);
+  perform set_config('lead.status_change_reason', 'prior-reason', true);
 
   perform public.transition_lead_status(v_lead_id, 'needs_review', 'rpc', null, 'attribution test');
 
   if pg_catalog.current_setting('lead.status_change_source', true) <> 'prior-context' then
-    raise exception 'RPC must restore prior attribution GUC after success';
+    raise exception 'RPC must restore prior attribution source GUC after success';
   end if;
+
+  if pg_catalog.current_setting('lead.status_changed_by', true) <> v_second_operator_id::text then
+    raise exception 'RPC must restore prior attribution changed_by GUC after success';
+  end if;
+
+  if pg_catalog.current_setting('lead.status_change_reason', true) <> 'prior-reason' then
+    raise exception 'RPC must restore prior attribution reason GUC after success';
+  end if;
+
+  perform public.clear_lead_status_attribution_gucs();
+
+  perform public.transition_lead_status(v_lead_id, 'contacted', 'rpc', null, 'empty-prior success');
+
+  if coalesce(pg_catalog.current_setting('lead.status_change_source', true), ''::text) <> ''::text then
+    raise exception 'empty prior source must remain empty after success';
+  end if;
+
+  if coalesce(pg_catalog.current_setting('lead.status_changed_by', true), ''::text) <> ''::text then
+    raise exception 'empty prior changed_by must remain empty after success';
+  end if;
+
+  if coalesce(pg_catalog.current_setting('lead.status_change_reason', true), ''::text) <> ''::text then
+    raise exception 'empty prior reason must remain empty after success';
+  end if;
+
+  perform set_config('lead.status_change_source', 'prior-context', true);
+  perform set_config('lead.status_changed_by', v_second_operator_id::text, true);
+  perform set_config('lead.status_change_reason', 'prior-reason', true);
+  perform set_config('phase1.force_transition_fail', 'yes', true);
+
+  v_caught := false;
+  begin
+    perform public.transition_lead_status(
+      v_lead_id,
+      'qualified',
+      'rpc',
+      v_primary_operator_id,
+      'non-empty prior failure'
+    );
+    raise exception 'expected forced transition failure';
+  exception
+    when others then
+      if position('phase1 forced transition failure' in sqlerrm) = 0 then
+        raise;
+      end if;
+      v_caught := true;
+  end;
+
+  if not v_caught then
+    raise exception 'transition failure path must be exercised for GUC restore';
+  end if;
+
+  if pg_catalog.current_setting('lead.status_change_source', true) <> 'prior-context' then
+    raise exception 'RPC must restore prior attribution source GUC after failure';
+  end if;
+
+  if pg_catalog.current_setting('lead.status_changed_by', true) <> v_second_operator_id::text then
+    raise exception 'RPC must restore prior attribution changed_by GUC after failure';
+  end if;
+
+  if pg_catalog.current_setting('lead.status_change_reason', true) <> 'prior-reason' then
+    raise exception 'RPC must restore prior attribution reason GUC after failure';
+  end if;
+
+  perform set_config('phase1.force_transition_fail', '', true);
+  perform public.clear_lead_status_attribution_gucs();
+  perform set_config('phase1.force_transition_fail', 'yes', true);
+
+  v_caught := false;
+  begin
+    perform public.transition_lead_status(
+      v_lead_id,
+      'in_progress',
+      'rpc',
+      null,
+      'empty prior failure'
+    );
+    raise exception 'expected forced transition failure with empty prior context';
+  exception
+    when others then
+      if position('phase1 forced transition failure' in sqlerrm) = 0 then
+        raise;
+      end if;
+      v_caught := true;
+  end;
+
+  if not v_caught then
+    raise exception 'empty-prior transition failure path must be exercised';
+  end if;
+
+  if coalesce(pg_catalog.current_setting('lead.status_change_source', true), ''::text) <> ''::text then
+    raise exception 'empty prior source must remain empty after failure';
+  end if;
+
+  if coalesce(pg_catalog.current_setting('lead.status_changed_by', true), ''::text) <> ''::text then
+    raise exception 'empty prior changed_by must remain empty after failure';
+  end if;
+
+  if coalesce(pg_catalog.current_setting('lead.status_change_reason', true), ''::text) <> ''::text then
+    raise exception 'empty prior reason must remain empty after failure';
+  end if;
+
+  perform set_config('phase1.force_transition_fail', '', true);
+
+  perform set_config('lead.status_change_source', 'prior-context', true);
+  perform set_config('lead.status_changed_by', v_second_operator_id::text, true);
+  perform set_config('lead.status_change_reason', 'prior-reason', true);
 
   insert into public.leads (
     source, contact_name, contact_email, title

@@ -14,8 +14,8 @@ describe("phase9 demo reset migration", () => {
     expect(sql).toMatch(/security definer/i);
     expect(sql).toMatch(/set search_path = pg_catalog, pg_temp/i);
     expect(sql).toMatch(/validate_active_operator_assignment\(p_operator_id\)/i);
-    expect(sql).toMatch(/pg_try_advisory_lock\(918273645\)/i);
-    expect(sql).toMatch(/pg_advisory_unlock\(918273645\)/i);
+    expect(sql).toMatch(/pg_try_advisory_xact_lock\(918273645\)/i);
+    expect(sql).not.toMatch(/pg_advisory_unlock\(918273645\)/i);
     expect(sql).toMatch(/delete from public\.leads[\s\S]*where is_synthetic = true/i);
     expect(sql).toMatch(/@example\.com/i);
     expect(sql).not.toMatch(/\+7[\s(]?9/);
@@ -38,7 +38,8 @@ describe("phase9 demo reset migration", () => {
     expect(verifySql).toMatch(/begin;/i);
     expect(verifySql).toMatch(/rollback;/i);
     expect(verifySql).toMatch(/repeated demo reset verification/i);
-    expect(verifySql).toMatch(/pg_advisory_unlock\(918273645\)/i);
+    expect(verifySql).toMatch(/pg_try_advisory_lock\(918273645\)/i);
+    expect(verifySql).toMatch(/transaction-scoped advisory locks, not session locks/i);
     expect(verifySql).toMatch(/fixture synthetic lead % must be deleted by reset/i);
     expect(verifySql).toMatch(/fixture synthetic history % must cascade on reset/i);
     expect(verifySql).toMatch(/fixture synthetic comment % must cascade on reset/i);
