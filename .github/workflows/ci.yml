@@ -42,5 +42,8 @@ jobs:
       - name: Scan client bundles for service_role canaries
         run: bash scripts/scan-client-bundle-secrets.sh
 
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
       - name: Disposable SQL migrations and verification
         run: bash scripts/ci-disposable-validation.sh
