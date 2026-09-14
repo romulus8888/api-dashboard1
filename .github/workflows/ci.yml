@@ -26,8 +26,8 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      PGHOST: localhost
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      PGHOST: postgres
       PGPORT: 5432
       PGUSER: postgres
       PGPASSWORD: postgres
@@ -72,6 +72,16 @@ jobs:
         run: |
           # scripts/ci-disposable-validation.sh
           set -euxo pipefail
+          for attempt in $(seq 1 60); do
+            if psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready' >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" = "60" ]; then
+              echo "::error::postgres not reachable at PGHOST=${PGHOST} url=${DISPOSABLE_DATABASE_URL}" >&2
+              exit 2
+            fi
+            sleep 1
+          done
           psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
           export DISPOSABLE_VALIDATION_TRACK=clean
           bash scripts/validate-disposable-database.sh bootstrap
@@ -81,6 +91,6 @@ jobs:
           psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
           psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy template template0'
           export DISPOSABLE_VALIDATION_TRACK=legacy
-          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
+          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres_legacy
           bash scripts/validate-disposable-database.sh bootstrap
           bash scripts/validate-disposable-database.sh verify
