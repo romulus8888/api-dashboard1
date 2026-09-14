@@ -88,6 +88,7 @@ cleanup_container
 log "starting ${PG_IMAGE} with workspace mount"
 docker run -d --name "$CONTAINER_NAME" \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" \
+  -p 55432:5432 \
   -v "${ROOT}:/workspace:ro" \
   "$PG_IMAGE" >/dev/null
 
@@ -131,14 +132,14 @@ for verify in "$ROOT"/supabase/verify/*.sql; do
 done
 
 if ! command -v psql >/dev/null 2>&1; then
-  if command -v apt-get >/dev/null 2>&1; then
-    apt-get update && apt-get install -y postgresql-client
-  else
-    fail 12 "psql is required for integration tests"
-  fi
+  fail 12 "psql is required for integration tests (install postgresql-client)"
 fi
 
 export PGSSLMODE=disable
+if ! psql "$BASE_URL" -c 'select 1' >/dev/null 2>&1; then
+  fail 12 "host psql cannot reach disposable Postgres at $BASE_URL"
+fi
+
 (
   unset DISPOSABLE_PSQL_MODE
   run_validate "clean track integration" 12 integration
