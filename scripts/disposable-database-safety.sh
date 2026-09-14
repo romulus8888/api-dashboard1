@@ -99,6 +99,10 @@ disposable_psql() {
     local container="${DISPOSABLE_CI_CONTAINER_NAME:-disposable-postgres}"
     local database
     database="$(disposable_resolve_database_name)"
+    if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
+      docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 < "$2"
+      return
+    fi
     docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 "$@"
     return
   fi
