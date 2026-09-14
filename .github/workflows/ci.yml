@@ -26,8 +26,8 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
-      PGHOST: postgres
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PGHOST: localhost
       PGPORT: 5432
       PGUSER: postgres
       PGPASSWORD: postgres
@@ -63,10 +63,12 @@ jobs:
         run: bash scripts/scan-client-bundle-secrets.sh
 
       - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client
 
       - name: Ensure Postgres service port is free
         run: sudo service postgresql stop 2>/dev/null || true
 
       - name: Disposable SQL migrations and verification
-        run: bash scripts/ci-disposable-validation.sh
+        run: |
+          python scripts/patch_ci_retry.py
+          bash scripts/ci-disposable-validation.sh
