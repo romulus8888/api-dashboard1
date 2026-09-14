@@ -80,10 +80,9 @@ describe("DemoResetAction", () => {
     await waitFor(() => {
       expect(resetAdminDemoData).toHaveBeenCalledTimes(1);
       expect(onResetComplete).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByText(en.leads.demoReset.successTitle)).toBeTruthy();
     });
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByText(en.leads.demoReset.successTitle)).toBeTruthy();
   });
 
   it("shows a conflict message when another reset is running", async () => {
