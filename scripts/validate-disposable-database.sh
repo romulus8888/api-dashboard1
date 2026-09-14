@@ -182,14 +182,20 @@ run_integration_scripts() {
   local integration
   for integration in "${integration_scripts[@]}"; do
     echo "==> integration: $(basename "$integration")"
-    if ! bash "$integration" 2>&1 | tee /tmp/"$(basename "$integration")".log; then
-      cat /tmp/"$(basename "$integration")".log >&2
+    integration_log="$(mktemp)"
+    if ! bash "$integration" >"$integration_log" 2>&1; then
+      cat "$integration_log" >&2
       if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
         echo "::error title=integration failed::$(basename "$integration")" >&2
+        grep -E 'ERROR:|FATAL:|integration |connection A|timed out|missing integration' "$integration_log" | head -20 | while IFS= read -r line; do
+          echo "::error::${line}" >&2
+        done || true
       fi
+      rm -f "$integration_log"
       echo "FAILED integration: $(basename "$integration")" >&2
       exit 4
     fi
+    rm -f "$integration_log"
   done
 }
 

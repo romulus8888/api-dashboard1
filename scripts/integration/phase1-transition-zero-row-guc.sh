@@ -13,21 +13,6 @@ restore_transition_lead_status() {
   psql -v ON_ERROR_STOP=1 -f "$ROOT/supabase/migrations/20260911140000_atomic_lost_reason_in_transition.sql" >/dev/null
 }
 
-assert_integration_pause_function() {
-  local has_pause
-  has_pause="$(psql -v ON_ERROR_STOP=1 -tAc "
-    select exists (
-      select 1
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public'
-        and p.proname = 'transition_lead_status'
-        and pg_get_functiondef(p.oid) like '%pg_advisory_lock(999999004)%'
-    );
-  ")"
-  [[ "$has_pause" == "t" ]]
-}
-
 cleanup_objects() {
   restore_transition_lead_status || true
   psql -v ON_ERROR_STOP=1 <<SQL || true
@@ -52,22 +37,12 @@ values
 on conflict (id) do update set is_active = excluded.is_active;
 SQL
 
-if [[ ! -f "$SQL_DIR/transition_lead_status_with_pause.sql" ]]; then
-  echo "missing integration SQL: $SQL_DIR/transition_lead_status_with_pause.sql" >&2
-  exit 1
-fi
-
 psql -v ON_ERROR_STOP=1 -f "$SQL_DIR/transition_lead_status_with_pause.sql"
 
-if ! assert_integration_pause_function; then
-  echo "integration pause function was not installed" >&2
-  exit 1
-fi
-
-wait_for_update_pause() {
+wait_for_conn_a_blocked() {
   local case_label="$1"
-  if ! psql -v ON_ERROR_STOP=1 <<SQL
-do \$wait_for_update_pause\$
+  psql -v ON_ERROR_STOP=1 <<SQL
+do \$wait_for_conn_a_blocked\$
 declare
   i integer;
 begin
@@ -77,8 +52,10 @@ begin
       from pg_catalog.pg_locks l
       join pg_catalog.pg_stat_activity a on a.pid = l.pid
       where l.locktype = 'advisory'
-        and l.granted
+        and not l.granted
         and a.application_name = 'integration_conn_a'
+        and l.classid = 0
+        and l.objid = $UPDATE_COORD_LOCK
     ) then
       return;
     end if;
@@ -87,20 +64,17 @@ begin
       select 1
       from pg_catalog.pg_stat_activity
       where application_name = 'integration_conn_a'
+        and state <> 'idle'
     ) then
       raise exception 'connection A is not active';
     end if;
 
     perform pg_sleep(0.01);
   end loop;
-  raise exception 'timed out waiting for transition update pause';
+  raise exception 'timed out waiting for connection A to block on update pause (%s)', '$case_label';
 end;
-\$wait_for_update_pause\$;
+\$wait_for_conn_a_blocked\$;
 SQL
-  then
-    echo "timed out waiting for transition update pause ($case_label)" >&2
-    return 1
-  fi
 }
 
 run_disappearance_case() {
@@ -108,11 +82,17 @@ run_disappearance_case() {
   local prior_source="$2"
   local prior_changed_by="$3"
   local prior_reason="$4"
-  local conn_a_log
-  local fifo_conn_a_started
+  local fifo_hold_ready fifo_hold_proceed conn_a_log
+  fifo_hold_ready="$(mktemp -u)"
+  fifo_hold_proceed="$(mktemp -u)"
   conn_a_log="$(mktemp)"
-  fifo_conn_a_started="$(mktemp -u)"
-  mkfifo "$fifo_conn_a_started"
+  mkfifo "$fifo_hold_ready" "$fifo_hold_proceed"
+
+  cleanup_hold() {
+    echo proceed >"$fifo_hold_proceed" 2>/dev/null || true
+    rm -f "$fifo_hold_ready" "$fifo_hold_proceed"
+  }
+  trap cleanup_hold RETURN
 
   psql -v ON_ERROR_STOP=1 <<SQL
 insert into public.leads (
@@ -131,13 +111,29 @@ on conflict (id) do update
 set status = excluded.status;
 SQL
 
-  psql -v ON_ERROR_STOP=1 <<SQL >"$conn_a_log" 2>&1 &
+  psql -v ON_ERROR_STOP=1 <<SQL &
+begin;
+select pg_catalog.set_config('application_name', 'integration_conn_hold', false);
+select pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
+\echo integration: hold connection acquired update pause lock
+\! echo ready > '$fifo_hold_ready'
+\! read _ < '$fifo_hold_proceed'
+delete from public.leads where id = '$LEAD_ID';
+select pg_catalog.pg_advisory_unlock($UPDATE_COORD_LOCK);
+commit;
+\echo integration: hold connection released update pause lock
+SQL
+  local conn_hold_pid=$!
+
+  read -r _ <"$fifo_hold_ready"
+  echo "integration: hold connection blocks update pause ($case_label)"
+
+  psql -v ON_ERROR_STOP=1 >"$conn_a_log" 2>&1 <<SQL &
 begin;
 select pg_catalog.set_config('application_name', 'integration_conn_a', false);
 select pg_catalog.set_config('lead.status_change_source', '$prior_source', true);
 select pg_catalog.set_config('lead.status_changed_by', '$prior_changed_by', true);
 select pg_catalog.set_config('lead.status_change_reason', '$prior_reason', true);
-\! echo started > '$fifo_conn_a_started'
 do \$verify_case\$
 declare
   v_caught boolean := false;
@@ -183,44 +179,37 @@ rollback;
 SQL
   local conn_a_pid=$!
 
-  read -r _ <"$fifo_conn_a_started"
-
-  if ! wait_for_update_pause "$case_label"; then
-    kill "$conn_a_pid" 2>/dev/null || true
+  if ! wait_for_conn_a_blocked "$case_label"; then
+    kill "$conn_a_pid" "$conn_hold_pid" 2>/dev/null || true
     wait "$conn_a_pid" 2>/dev/null || true
+    wait "$conn_hold_pid" 2>/dev/null || true
     cat "$conn_a_log" >&2
-    rm -f "$conn_a_log" "$fifo_conn_a_started"
+    rm -f "$conn_a_log"
     return 1
   fi
 
-  echo "integration: transition reached update pause ($case_label)"
+  echo "integration: connection A blocked on update pause ($case_label)"
+  echo proceed >"$fifo_hold_proceed"
 
-  psql -v ON_ERROR_STOP=1 <<SQL
-select pg_catalog.set_config('application_name', 'integration_conn_b', false);
-begin;
-delete from public.leads where id = '$LEAD_ID';
-commit;
-SQL
-
-  psql -v ON_ERROR_STOP=1 -c "select pg_catalog.pg_advisory_unlock($UPDATE_COORD_LOCK);" >/dev/null
+  wait "$conn_hold_pid"
   wait "$conn_a_pid"
   local conn_a_status=$?
 
   if [[ $conn_a_status -ne 0 ]]; then
     cat "$conn_a_log" >&2
     echo "connection A failed ($case_label)" >&2
-    rm -f "$conn_a_log" "$fifo_conn_a_started"
+    rm -f "$conn_a_log"
     return 1
   fi
 
   if grep -E 'ERROR:|FATAL:' "$conn_a_log" >/dev/null; then
     cat "$conn_a_log" >&2
     echo "connection A reported SQL errors ($case_label)" >&2
-    rm -f "$conn_a_log" "$fifo_conn_a_started"
+    rm -f "$conn_a_log"
     return 1
   fi
 
-  rm -f "$conn_a_log" "$fifo_conn_a_started"
+  rm -f "$conn_a_log"
 }
 
 run_disappearance_case \
