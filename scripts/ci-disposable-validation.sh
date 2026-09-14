@@ -15,7 +15,19 @@ export DISPOSABLE_TEST_ACK=yes
 unset DISPOSABLE_PSQL_MODE DISPOSABLE_CI_CONTAINER_NAME DISPOSABLE_CI_HOST_WORKSPACE_ROOT
 
 log "waiting for ${PG_IMAGE} postgres service"
-psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
+attempts=30
+while [ "$attempts" -gt 0 ]; do
+  if psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready' >/dev/null 2>&1; then
+    break
+  fi
+  attempts=$((attempts - 1))
+  sleep 1
+done
+
+if [ "$attempts" -eq 0 ]; then
+  echo "postgres service is not ready" >&2
+  exit 2
+fi
 
 export DISPOSABLE_VALIDATION_TRACK=clean
 log "clean track bootstrap"
