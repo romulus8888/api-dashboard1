@@ -22,6 +22,10 @@ describe("phase9 demo reset migration", () => {
     expect(sql).toMatch(/revoke all on function public\.reset_demo_data/i);
     expect(sql).toMatch(/transition_lead_status/i);
     expect(sql).not.toMatch(/external_event_id/);
+    expect(sql).toMatch(/automation_attempt, created_at[\s\S]*'new', 'idle', 2, v_now - interval '5 days'/i);
+    expect(sql).toMatch(
+      /next_action_at = v_now - interval '2 days'[\s\S]*-- 10\. Additional active pipeline lead/i,
+    );
   });
 
   it("ships rollback-safe SQL verification with survival, cascade, and privilege assertions", () => {
@@ -32,12 +36,17 @@ describe("phase9 demo reset migration", () => {
 
     expect(verifySql).toMatch(/begin;/i);
     expect(verifySql).toMatch(/rollback;/i);
-    expect(verifySql).toMatch(/non-synthetic lead must survive reset/i);
-    expect(verifySql).toMatch(/synthetic comments must cascade on reset/i);
+    expect(verifySql).toMatch(/fixture synthetic lead % must be deleted by reset/i);
+    expect(verifySql).toMatch(/fixture synthetic history % must cascade on reset/i);
+    expect(verifySql).toMatch(/fixture synthetic comment % must cascade on reset/i);
+    expect(verifySql).toMatch(/fixture synthetic audit % must cascade on reset/i);
+    expect(verifySql).toMatch(/non-synthetic lead % must survive reset/i);
+    expect(verifySql).toMatch(/legacy jobs row % must survive reset/i);
+    expect(verifySql).toMatch(/operator profile % must survive reset/i);
+    expect(verifySql).toMatch(/auth user % must survive reset/i);
     expect(verifySql).toMatch(/repeated reset must not accumulate seed rows/i);
-    expect(verifySql).toMatch(/operators must survive reset/i);
-    expect(verifySql).toMatch(/auth users must survive reset/i);
-    expect(verifySql).toMatch(/rate-limit buckets must survive reset/i);
+    expect(verifySql).toMatch(/repeated reset must issue a new demo_reset_group_id/i);
+    expect(verifySql).toMatch(/rate-limit bucket fixture must survive reset/i);
     expect(verifySql).toMatch(/anon must not execute reset_demo_data/i);
     expect(verifySql).toMatch(/not an active operator/i);
     expect(verifySql).toMatch(/get_lead_metrics/i);

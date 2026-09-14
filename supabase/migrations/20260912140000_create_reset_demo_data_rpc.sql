@@ -171,7 +171,7 @@ begin
     'website', 'en', 'Sam Doyle', 'sam.doyle@example.com',
     'Billing export checks', 'Validate export jobs after workflow changes.',
     'medium', 8000, 'USD', true, v_group_id,
-    'new', 'idle', v_now - interval '5 days'
+    'new', 'idle', 2, v_now - interval '5 days'
   )
   returning id into v_lead_id;
   perform public.transition_lead_status(
@@ -204,7 +204,7 @@ begin
   insert into public.leads (
     source, locale, contact_name, contact_email, title, description,
     priority, budget_amount, budget_currency, is_synthetic, demo_reset_group_id,
-    status, automation_state, next_action_at, created_at
+    status, automation_state, created_at
   )
   values (
     'email', 'ru', 'Ilya Volkov', 'ilya.volkov@example.com',
