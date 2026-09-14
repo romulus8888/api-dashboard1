@@ -444,7 +444,7 @@ begin
   returns trigger
   language plpgsql
   set search_path = pg_catalog, pg_temp
-  as $$
+  as $phase1_verify_force_transition_fail$
   begin
     if coalesce(pg_catalog.current_setting('phase1.force_transition_fail', true), ''::text) = 'yes'::text then
       raise exception 'phase1 forced transition failure';
@@ -452,7 +452,7 @@ begin
 
     return new;
   end;
-  $$;
+  $phase1_verify_force_transition_fail$;
 
   drop trigger if exists phase1_verify_force_transition_fail on public.leads;
   create trigger phase1_verify_force_transition_fail
