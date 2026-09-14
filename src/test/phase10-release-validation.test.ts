@@ -112,13 +112,13 @@ describe("phase10 release validation", () => {
     expect(workflow).toMatch(/permissions:\s*\n\s*contents: read/);
     expect(workflow).toMatch(/node-version: 24\.15\.0/);
     expect(workflow).toMatch(/DISPOSABLE_TEST_ACK: "yes"/);
+    expect(workflow).toMatch(/postgres:16/);
     expect(workflow).toMatch(/npm ci/);
     expect(workflow).toMatch(/npm test/);
     expect(workflow).toMatch(/npm run lint/);
     expect(workflow).toMatch(/npm run build/);
     expect(workflow).toMatch(/ci-disposable-validation\.sh/);
     const ciDisposable = readFileSync(join(ROOT, "scripts/ci-disposable-validation.sh"), "utf8");
-    expect(ciDisposable).toMatch(/postgres:16/);
     expect(ciDisposable).toMatch(/DISPOSABLE_VALIDATION_TRACK=clean/);
     expect(ciDisposable).toMatch(/DISPOSABLE_VALIDATION_TRACK=legacy/);
     expect(ciDisposable).toMatch(/postgres_legacy/);
