@@ -17,8 +17,8 @@ unset DISPOSABLE_PSQL_MODE DISPOSABLE_CI_CONTAINER_NAME DISPOSABLE_CI_HOST_WORKS
 log "waiting for ${PG_IMAGE} postgres service"
 psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
 
+export DISPOSABLE_VALIDATION_TRACK=clean
 log "clean track bootstrap"
-unset DISPOSABLE_VALIDATION_TRACK
 bash "$ROOT/scripts/validate-disposable-database.sh" bootstrap
 
 log "clean track verify"
