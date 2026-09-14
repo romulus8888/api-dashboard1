@@ -33,15 +33,18 @@ function collectClientSourceFiles(directory: string): string[] {
 describe("phase10 release validation", () => {
   it("ships a disposable SQL validation script with explicit opt-in and production guards", () => {
     const script = readFileSync(VALIDATION_SCRIPT, "utf8");
+    const safetyScript = readFileSync(join(ROOT, "scripts/disposable-database-safety.sh"), "utf8");
 
-    expect(script).toMatch(/DISPOSABLE_TEST_ACK=yes/);
-    expect(script).toMatch(/DISPOSABLE_DATABASE_URL/);
-    expect(script).toMatch(/ON_ERROR_STOP=1/);
-    expect(script).toMatch(/wait_for_postgres/);
+    expect(script).toMatch(/disposable-database-safety\.sh/);
+    expect(script).toMatch(/prepare_disposable_database_connection/);
+    expect(script).toMatch(/disposable_psql/);
+    expect(safetyScript).toMatch(/DISPOSABLE_TEST_ACK=yes/);
+    expect(safetyScript).toMatch(/DISPOSABLE_DATABASE_URL/);
+    expect(safetyScript).toMatch(/wait_for_disposable_postgres/);
     expect(script).toMatch(/disposable-test-prerequisites\.sql/);
     expect(script).toMatch(/supabase\/migrations/);
     expect(script).toMatch(/supabase\/verify/);
-    expect(script).toMatch(/supabase\.co|supabase\.com/i);
+    expect(safetyScript).toMatch(/supabase\.co|supabase\.com/i);
     expect(script).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
   });
 
@@ -127,12 +130,19 @@ describe("phase10 release validation", () => {
     );
 
     expect(validationScript).toMatch(/run_integration_scripts/);
+    expect(resetIntegration).toMatch(/disposable-database-safety\.sh/);
+    expect(resetIntegration).toMatch(/require_disposable_database_target/);
     expect(resetIntegration).toMatch(/Two-connection disposable integration/i);
     expect(resetIntegration).toMatch(/another reset is already in progress/i);
+    expect(gucIntegration).toMatch(/disposable-database-safety\.sh/);
+    expect(gucIntegration).toMatch(/require_disposable_database_target/);
     expect(gucIntegration).toMatch(/Two-connection disposable integration/i);
     expect(gucIntegration).toMatch(/disappeared during update/i);
     expect(gucIntegration).toMatch(/source GUC not restored after disappearance/i);
     expect(gucIntegration).toMatch(/empty prior context/i);
+    expect(gucIntegration).toMatch(/integration_conn_a/);
+    expect(gucIntegration).toMatch(/integration_conn_b/);
+    expect(gucIntegration).not.toMatch(/transition_lead_status_with_pause/);
     expect(gucIntegration).not.toMatch(/supabase\.co|supabase\.com/i);
   });
 

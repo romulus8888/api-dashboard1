@@ -2,20 +2,17 @@
 # Two-connection disposable integration: zero-row disappearance restores attribution GUCs.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SQL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/sql" && pwd)"
+INTEGRATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$INTEGRATION_DIR/../disposable-database-safety.sh"
+require_disposable_database_target
+
 PRIMARY_OPERATOR_ID="22222222-2222-4222-8222-222222222222"
 SECOND_OPERATOR_ID="33333333-3333-4333-8333-333333333333"
 LEAD_ID="44444444-4444-4444-8444-444444444444"
-UPDATE_COORD_LOCK=999999004
-
-restore_transition_lead_status() {
-  psql -v ON_ERROR_STOP=1 -f "$ROOT/supabase/migrations/20260911140000_atomic_lost_reason_in_transition.sql" >/dev/null
-}
 
 cleanup_objects() {
-  restore_transition_lead_status || true
-  psql -v ON_ERROR_STOP=1 <<SQL || true
+  disposable_psql <<SQL || true
 drop table if exists public.integration_coord;
 delete from public.leads where id = '$LEAD_ID';
 delete from public.operator_profiles where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
@@ -24,7 +21,7 @@ SQL
 }
 trap cleanup_objects EXIT
 
-psql -v ON_ERROR_STOP=1 <<SQL
+disposable_psql <<SQL
 create table if not exists public.integration_coord (
   k text primary key,
   v text not null
@@ -44,62 +41,23 @@ values
 on conflict (id) do update set is_active = excluded.is_active;
 SQL
 
-psql -v ON_ERROR_STOP=1 -f "$SQL_DIR/transition_lead_status_with_pause.sql"
-
-wait_for_hold_pause_lock() {
+wait_for_conn_a_delete_held() {
   local case_label="$1"
-  psql -v ON_ERROR_STOP=1 <<SQL
-do \$wait_for_hold_pause_lock\$
+  disposable_psql <<SQL
+do \$wait_for_conn_a_delete_held\$
 declare
   i integer;
 begin
   for i in 1..600 loop
     if exists (
       select 1
-      from pg_catalog.pg_locks l
-      join pg_catalog.pg_stat_activity a on a.pid = l.pid
-      where l.locktype = 'advisory'
+      from pg_catalog.pg_stat_activity a
+      join pg_catalog.pg_locks l on l.pid = a.pid
+      join pg_catalog.pg_class c on c.oid = l.relation
+      where a.application_name = 'integration_conn_a'
         and l.granted
-        and a.application_name = 'integration_conn_hold'
-        and l.classid = 0
-        and l.objid = $UPDATE_COORD_LOCK
-    ) then
-      return;
-    end if;
-
-    if not exists (
-      select 1
-      from pg_catalog.pg_stat_activity
-      where application_name = 'integration_conn_hold'
-    ) then
-      raise exception 'hold connection is not active';
-    end if;
-
-    perform pg_sleep(0.01);
-  end loop;
-  raise exception 'timed out waiting for hold pause lock (%s)', '$case_label';
-end;
-\$wait_for_hold_pause_lock\$;
-SQL
-}
-
-wait_for_conn_a_blocked() {
-  local case_label="$1"
-  psql -v ON_ERROR_STOP=1 <<SQL
-do \$wait_for_conn_a_blocked\$
-declare
-  i integer;
-begin
-  for i in 1..600 loop
-    if exists (
-      select 1
-      from pg_catalog.pg_locks l
-      join pg_catalog.pg_stat_activity a on a.pid = l.pid
-      where l.locktype = 'advisory'
-        and not l.granted
-        and a.application_name = 'integration_conn_a'
-        and l.classid = 0
-        and l.objid = $UPDATE_COORD_LOCK
+        and c.relname = 'leads'
+        and l.mode = 'RowExclusiveLock'
     ) then
       return;
     end if;
@@ -114,9 +72,54 @@ begin
 
     perform pg_sleep(0.01);
   end loop;
-  raise exception 'timed out waiting for connection A to block on update pause (%s)', '$case_label';
+  raise exception 'timed out waiting for connection A to hold uncommitted delete (%s)', '$case_label';
 end;
-\$wait_for_conn_a_blocked\$;
+\$wait_for_conn_a_delete_held\$;
+SQL
+}
+
+wait_for_conn_b_blocked_on_update() {
+  local case_label="$1"
+  disposable_psql <<SQL
+do \$wait_for_conn_b_blocked_on_update\$
+declare
+  i integer;
+begin
+  for i in 1..600 loop
+    if exists (
+      select 1
+      from pg_catalog.pg_stat_activity a
+      join pg_catalog.pg_locks l on l.pid = a.pid
+      join pg_catalog.pg_class c on c.oid = l.relation
+      where a.application_name = 'integration_conn_b'
+        and not l.granted
+        and c.relname = 'leads'
+    ) then
+      return;
+    end if;
+
+    if exists (
+      select 1
+      from pg_catalog.pg_stat_activity a
+      where a.application_name = 'integration_conn_b'
+        and a.wait_event_type = 'Lock'
+    ) then
+      return;
+    end if;
+
+    if i > 100 and not exists (
+      select 1
+      from pg_catalog.pg_stat_activity
+      where application_name = 'integration_conn_b'
+    ) then
+      raise exception 'connection B is not active';
+    end if;
+
+    perform pg_sleep(0.01);
+  end loop;
+  raise exception 'timed out waiting for connection B to block on lead update (%s)', '$case_label';
+end;
+\$wait_for_conn_b_blocked_on_update\$;
 SQL
 }
 
@@ -125,13 +128,13 @@ run_disappearance_case() {
   local prior_source="$2"
   local prior_changed_by="$3"
   local prior_reason="$4"
-  local conn_a_log conn_hold_log
+  local conn_a_log conn_b_log
   conn_a_log="$(mktemp)"
-  conn_hold_log="$(mktemp)"
+  conn_b_log="$(mktemp)"
 
-  psql -v ON_ERROR_STOP=1 -c "truncate public.integration_coord;"
+  disposable_psql -c "truncate public.integration_coord;"
 
-  psql -v ON_ERROR_STOP=1 <<SQL
+  disposable_psql <<SQL
 insert into public.leads (
   id, source, contact_name, contact_email, title, description, status
 )
@@ -148,10 +151,11 @@ on conflict (id) do update
 set status = excluded.status;
 SQL
 
-  psql -v ON_ERROR_STOP=1 >"$conn_hold_log" 2>&1 <<SQL &
-select pg_catalog.set_config('application_name', 'integration_conn_hold', false);
-select pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
-do \$wait_for_hold_proceed\$
+  disposable_psql >"$conn_a_log" 2>&1 <<SQL &
+begin;
+select pg_catalog.set_config('application_name', 'integration_conn_a', false);
+delete from public.leads where id = '$LEAD_ID';
+do \$wait_for_conn_a_proceed\$
 declare
   i integer;
 begin
@@ -166,27 +170,26 @@ begin
     end if;
     perform pg_sleep(0.01);
   end loop;
-  raise exception 'timed out waiting for hold proceed signal';
+  raise exception 'timed out waiting for connection A proceed signal';
 end;
-\$wait_for_hold_proceed\$;
-delete from public.leads where id = '$LEAD_ID';
-select pg_catalog.pg_advisory_unlock($UPDATE_COORD_LOCK);
+\$wait_for_conn_a_proceed\$;
+commit;
 SQL
-  local conn_hold_pid=$!
+  local conn_a_pid=$!
 
-  if ! wait_for_hold_pause_lock "$case_label"; then
-    kill "$conn_hold_pid" 2>/dev/null || true
-    wait "$conn_hold_pid" 2>/dev/null || true
-    cat "$conn_hold_log" >&2
-    rm -f "$conn_hold_log" "$conn_a_log"
+  if ! wait_for_conn_a_delete_held "$case_label"; then
+    kill "$conn_a_pid" 2>/dev/null || true
+    wait "$conn_a_pid" 2>/dev/null || true
+    cat "$conn_a_log" >&2
+    rm -f "$conn_a_log" "$conn_b_log"
     return 1
   fi
 
-  echo "integration: hold connection blocks update pause ($case_label)"
+  echo "integration: connection A holds uncommitted delete ($case_label)"
 
-  psql -v ON_ERROR_STOP=1 >"$conn_a_log" 2>&1 <<SQL &
+  disposable_psql >"$conn_b_log" 2>&1 <<SQL &
 begin;
-select pg_catalog.set_config('application_name', 'integration_conn_a', false);
+select pg_catalog.set_config('application_name', 'integration_conn_b', false);
 select pg_catalog.set_config('lead.status_change_source', '$prior_source', true);
 select pg_catalog.set_config('lead.status_changed_by', '$prior_changed_by', true);
 select pg_catalog.set_config('lead.status_change_reason', '$prior_reason', true);
@@ -233,48 +236,48 @@ end;
 \$verify_case\$;
 rollback;
 SQL
-  local conn_a_pid=$!
+  local conn_b_pid=$!
   sleep 0.05
 
-  if ! wait_for_conn_a_blocked "$case_label"; then
-    kill "$conn_a_pid" "$conn_hold_pid" 2>/dev/null || true
+  if ! wait_for_conn_b_blocked_on_update "$case_label"; then
+    kill "$conn_a_pid" "$conn_b_pid" 2>/dev/null || true
     wait "$conn_a_pid" 2>/dev/null || true
-    wait "$conn_hold_pid" 2>/dev/null || true
-    cat "$conn_hold_log" "$conn_a_log" >&2
-    rm -f "$conn_hold_log" "$conn_a_log"
+    wait "$conn_b_pid" 2>/dev/null || true
+    cat "$conn_a_log" "$conn_b_log" >&2
+    rm -f "$conn_a_log" "$conn_b_log"
     return 1
   fi
 
-  echo "integration: connection A blocked on update pause ($case_label)"
-  psql -v ON_ERROR_STOP=1 -c "delete from public.integration_coord where k = 'proceed'; insert into public.integration_coord (k, v) values ('proceed', 'yes');"
+  echo "integration: connection B blocked on lead update ($case_label)"
+  disposable_psql -c "delete from public.integration_coord where k = 'proceed'; insert into public.integration_coord (k, v) values ('proceed', 'yes');"
 
-  wait "$conn_hold_pid"
-  local conn_hold_status=$?
   wait "$conn_a_pid"
   local conn_a_status=$?
-
-  if [[ $conn_hold_status -ne 0 ]]; then
-    cat "$conn_hold_log" >&2
-    echo "hold connection failed ($case_label)" >&2
-    rm -f "$conn_hold_log" "$conn_a_log"
-    return 1
-  fi
+  wait "$conn_b_pid"
+  local conn_b_status=$?
 
   if [[ $conn_a_status -ne 0 ]]; then
     cat "$conn_a_log" >&2
     echo "connection A failed ($case_label)" >&2
-    rm -f "$conn_hold_log" "$conn_a_log"
+    rm -f "$conn_a_log" "$conn_b_log"
     return 1
   fi
 
-  if grep -E 'ERROR:|FATAL:' "$conn_hold_log" "$conn_a_log" >/dev/null; then
-    cat "$conn_hold_log" "$conn_a_log" >&2
+  if [[ $conn_b_status -ne 0 ]]; then
+    cat "$conn_b_log" >&2
+    echo "connection B failed ($case_label)" >&2
+    rm -f "$conn_a_log" "$conn_b_log"
+    return 1
+  fi
+
+  if grep -E 'ERROR:|FATAL:' "$conn_a_log" "$conn_b_log" >/dev/null; then
+    cat "$conn_a_log" "$conn_b_log" >&2
     echo "integration reported SQL errors ($case_label)" >&2
-    rm -f "$conn_hold_log" "$conn_a_log"
+    rm -f "$conn_a_log" "$conn_b_log"
     return 1
   fi
 
-  rm -f "$conn_hold_log" "$conn_a_log"
+  rm -f "$conn_a_log" "$conn_b_log"
 }
 
 run_disappearance_case \

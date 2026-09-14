@@ -2,11 +2,16 @@
 # Two-connection disposable integration: reset_demo_data xact advisory lock.
 set -euo pipefail
 
+INTEGRATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$INTEGRATION_DIR/../disposable-database-safety.sh"
+require_disposable_database_target
+
 OPERATOR_ID="11111111-1111-4111-8111-111111111111"
 RESET_XACT_LOCK=918273645
 
 wait_for_conn_a_holding_reset() {
-  psql -v ON_ERROR_STOP=1 <<SQL
+  disposable_psql <<SQL
 do \$wait_for_conn_a_holding_reset\$
 declare
   i integer;
@@ -54,7 +59,7 @@ SQL
 }
 
 cleanup() {
-  psql -v ON_ERROR_STOP=1 <<SQL || true
+  disposable_psql <<SQL || true
 delete from public.operator_profiles where id = '$OPERATOR_ID';
 delete from auth.users where id = '$OPERATOR_ID';
 truncate public.integration_coord;
@@ -62,7 +67,7 @@ SQL
 }
 trap cleanup EXIT
 
-psql -v ON_ERROR_STOP=1 <<SQL
+disposable_psql <<SQL
 create table if not exists public.integration_coord (
   k text primary key,
   v text not null
@@ -78,7 +83,7 @@ values ('$OPERATOR_ID', 'Integration Reset Operator', true)
 on conflict (id) do update set is_active = excluded.is_active;
 SQL
 
-psql -v ON_ERROR_STOP=1 <<SQL &
+disposable_psql <<SQL &
 begin;
 select pg_catalog.set_config('application_name', 'integration_conn_a', false);
 select public.reset_demo_data('$OPERATOR_ID'::uuid);
@@ -115,7 +120,7 @@ echo "integration: connection A reset complete, holding open transaction"
 
 set +e
 CONN_B_OUTPUT="$(
-  psql -v ON_ERROR_STOP=1 -tAc "select public.reset_demo_data('$OPERATOR_ID'::uuid)" 2>&1
+  disposable_psql -tAc "select public.reset_demo_data('$OPERATOR_ID'::uuid)" 2>&1
 )"
 CONN_B_STATUS=$?
 set -e
@@ -134,9 +139,9 @@ if [[ "$CONN_B_OUTPUT" != *"another reset is already in progress"* ]]; then
   exit 1
 fi
 
-psql -v ON_ERROR_STOP=1 -c "delete from public.integration_coord where k = 'proceed'; insert into public.integration_coord (k, v) values ('proceed', 'yes');"
+disposable_psql -c "delete from public.integration_coord where k = 'proceed'; insert into public.integration_coord (k, v) values ('proceed', 'yes');"
 wait "$CONN_A_PID"
 
-psql -v ON_ERROR_STOP=1 -tAc "select public.reset_demo_data('$OPERATOR_ID'::uuid)" >/dev/null
+disposable_psql -tAc "select public.reset_demo_data('$OPERATOR_ID'::uuid)" >/dev/null
 
 echo "OK: phase9 reset xact lock integration"
