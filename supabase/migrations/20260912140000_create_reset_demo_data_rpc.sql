@@ -28,7 +28,6 @@ begin
     raise exception 'reset_demo_data: another reset is already in progress';
   end if;
 
-  begin
   with deleted as (
     delete from public.leads
     where is_synthetic = true
@@ -239,11 +238,6 @@ begin
     v_lead_id, 'in_progress'::public.lead_status, 'demo_reset', p_operator_id
   );
   v_inserted_count := v_inserted_count + 1;
-  exception
-    when others then
-      perform pg_catalog.pg_advisory_unlock(918273645);
-      raise;
-  end;
 
   perform pg_catalog.pg_advisory_unlock(918273645);
 
@@ -252,6 +246,10 @@ begin
     'deleted_count', v_deleted_count,
     'inserted_count', v_inserted_count
   );
+exception
+  when others then
+    perform pg_catalog.pg_advisory_unlock(918273645);
+    raise;
 end;
 $$;
 

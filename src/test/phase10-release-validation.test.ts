@@ -37,6 +37,7 @@ describe("phase10 release validation", () => {
     expect(script).toMatch(/DISPOSABLE_TEST_ACK=yes/);
     expect(script).toMatch(/DISPOSABLE_DATABASE_URL/);
     expect(script).toMatch(/ON_ERROR_STOP=1/);
+    expect(script).toMatch(/wait_for_postgres/);
     expect(script).toMatch(/disposable-test-prerequisites\.sql/);
     expect(script).toMatch(/supabase\/migrations/);
     expect(script).toMatch(/supabase\/verify/);

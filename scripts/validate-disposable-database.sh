@@ -70,11 +70,28 @@ require_psql() {
   fi
 }
 
+wait_for_postgres() {
+  local attempts=30
+  while (( attempts > 0 )); do
+    if psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'select 1' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    attempts=$((attempts - 1))
+  done
+
+  echo "PostgreSQL is not reachable at DISPOSABLE_DATABASE_URL." >&2
+  exit 2
+}
+
 run_sql_file() {
   local label="$1"
   local file="$2"
   echo "==> $label: $(basename "$file")"
-  psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"
+  if ! psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"; then
+    echo "FAILED ${label}: $(basename "$file")" >&2
+    exit 3
+  fi
 }
 
 main() {
@@ -82,6 +99,7 @@ main() {
   require_database_url
   refuse_production_like_target "$(resolve_hostname)"
   require_psql
+  wait_for_postgres
 
   if [[ ! -f "$FIXTURES" ]]; then
     echo "Missing fixture file: $FIXTURES" >&2
