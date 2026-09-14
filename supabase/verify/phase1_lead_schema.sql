@@ -164,8 +164,13 @@ begin
     set owner_id = gen_random_uuid()
     where id = v_lead_id;
   exception
-    when foreign_key_violation then
-      v_caught := true;
+    when others then
+      if sqlerrm like '%foreign_key_violation%'
+         or sqlerrm like '%not an active operator%' then
+        v_caught := true;
+      else
+        raise;
+      end if;
   end;
 
   if not v_caught then
