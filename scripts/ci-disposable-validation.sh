@@ -21,6 +21,9 @@ fail() {
   local status="${1:-2}"
   shift || true
   echo "FAILED [ci-disposable] $*" >&2
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    echo "::error::$*" >&2
+  fi
   docker logs "$CONTAINER_NAME" 2>&1 | tail -80 >&2 || true
   exit "$status"
 }
