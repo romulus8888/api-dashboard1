@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PG_IMAGE="${DISPOSABLE_CI_POSTGRES_IMAGE:-postgres:16}"
 PG_PASSWORD="${DISPOSABLE_CI_POSTGRES_PASSWORD:-postgres}"
-LEGACY_URL="${DISPOSABLE_LEGACY_DATABASE_URL:-postgresql://postgres:${PG_PASSWORD}@postgres:5432/postgres_legacy}"
+LEGACY_URL="${DISPOSABLE_LEGACY_DATABASE_URL:-postgresql://postgres:${PG_PASSWORD}@localhost:5432/postgres_legacy}"
 
 log() {
   echo "==> [ci-disposable] $*"
@@ -16,10 +16,6 @@ psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
 export DISPOSABLE_VALIDATION_TRACK=clean
 log "clean track bootstrap (${PG_IMAGE})"
 bash "$ROOT/scripts/validate-disposable-database.sh" bootstrap
-
-log "clean track schema probe"
-psql -v ON_ERROR_STOP=1 \
-  -c "select to_regclass('public.jobs') as jobs, to_regclass('public.job_processing_audit') as job_audit"
 
 log "clean track verify"
 bash "$ROOT/scripts/validate-disposable-database.sh" verify

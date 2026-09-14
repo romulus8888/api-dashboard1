@@ -63,12 +63,21 @@ jobs:
         run: bash scripts/scan-client-bundle-secrets.sh
 
       - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client
-
-      - name: Ensure Postgres service port is free
-        run: sudo service postgresql stop 2>/dev/null || true
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Disposable SQL migrations and verification
         run: |
-          python scripts/patch_ci_retry.py
-          bash scripts/ci-disposable-validation.sh
+          # scripts/ci-disposable-validation.sh
+          set -euxo pipefail
+          psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
+          export DISPOSABLE_VALIDATION_TRACK=clean
+          bash scripts/validate-disposable-database.sh bootstrap
+          bash scripts/validate-disposable-database.sh verify
+          bash scripts/validate-disposable-database.sh integration
+          psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
+          psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
+          psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy template template0'
+          export DISPOSABLE_VALIDATION_TRACK=legacy
+          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
+          bash scripts/validate-disposable-database.sh bootstrap
+          bash scripts/validate-disposable-database.sh verify
