@@ -46,29 +46,40 @@ SQL
 
 psql -v ON_ERROR_STOP=1 -f "$SQL_DIR/transition_lead_status_with_pause.sql"
 
-wait_for_coord() {
-  local key="$1"
-  local value="$2"
-  local case_label="$3"
+wait_for_hold_pause_lock() {
+  local case_label="$1"
   psql -v ON_ERROR_STOP=1 <<SQL
-do \$wait_for_coord\$
+do \$wait_for_hold_pause_lock\$
 declare
   i integer;
 begin
   for i in 1..600 loop
     if exists (
       select 1
-      from public.integration_coord
-      where k = '$key'
-        and v = '$value'
+      from pg_catalog.pg_locks l
+      join pg_catalog.pg_stat_activity a on a.pid = l.pid
+      where l.locktype = 'advisory'
+        and l.granted
+        and a.application_name = 'integration_conn_hold'
+        and l.classid = 0
+        and l.objid = $UPDATE_COORD_LOCK
     ) then
       return;
     end if;
+
+    if not exists (
+      select 1
+      from pg_catalog.pg_stat_activity
+      where application_name = 'integration_conn_hold'
+    ) then
+      raise exception 'hold connection is not active';
+    end if;
+
     perform pg_sleep(0.01);
   end loop;
-  raise exception 'timed out waiting for integration_coord %=% (%s)', '$key', '$value', '$case_label';
+  raise exception 'timed out waiting for hold pause lock (%s)', '$case_label';
 end;
-\$wait_for_coord\$;
+\$wait_for_hold_pause_lock\$;
 SQL
 }
 
@@ -139,10 +150,8 @@ set status = excluded.status;
 SQL
 
   psql -v ON_ERROR_STOP=1 >"$conn_hold_log" 2>&1 <<SQL &
-begin;
 select pg_catalog.set_config('application_name', 'integration_conn_hold', false);
 select pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
-insert into public.integration_coord (k, v) values ('hold', 'ready');
 do \$wait_for_hold_proceed\$
 declare
   i integer;
@@ -163,11 +172,17 @@ end;
 \$wait_for_hold_proceed\$;
 delete from public.leads where id = '$LEAD_ID';
 select pg_catalog.pg_advisory_unlock($UPDATE_COORD_LOCK);
-commit;
 SQL
   local conn_hold_pid=$!
 
-  wait_for_coord hold ready "$case_label"
+  if ! wait_for_hold_pause_lock "$case_label"; then
+    kill "$conn_hold_pid" 2>/dev/null || true
+    wait "$conn_hold_pid" 2>/dev/null || true
+    cat "$conn_hold_log" >&2
+    rm -f "$conn_hold_log" "$conn_a_log"
+    return 1
+  fi
+
   echo "integration: hold connection blocks update pause ($case_label)"
 
   psql -v ON_ERROR_STOP=1 >"$conn_a_log" 2>&1 <<SQL &

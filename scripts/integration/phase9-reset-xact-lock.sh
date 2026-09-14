@@ -3,29 +3,43 @@
 set -euo pipefail
 
 OPERATOR_ID="11111111-1111-4111-8111-111111111111"
+RESET_XACT_LOCK=918273645
 
-wait_for_coord() {
-  local key="$1"
-  local value="$2"
+wait_for_reset_xact_lock() {
   psql -v ON_ERROR_STOP=1 <<SQL
-do \$wait_for_coord\$
+do \$wait_for_reset_xact_lock\$
 declare
   i integer;
 begin
   for i in 1..600 loop
     if exists (
       select 1
-      from public.integration_coord
-      where k = '$key'
-        and v = '$value'
+      from pg_catalog.pg_locks l
+      join pg_catalog.pg_stat_activity a on a.pid = l.pid
+      where l.locktype = 'advisory'
+        and l.granted
+        and l.objsubid = 2
+        and a.application_name = 'integration_conn_a'
+        and l.classid = 0
+        and l.objid = $RESET_XACT_LOCK
     ) then
       return;
     end if;
+
+    if not exists (
+      select 1
+      from pg_catalog.pg_stat_activity
+      where application_name = 'integration_conn_a'
+        and state <> 'idle'
+    ) then
+      raise exception 'connection A is not active';
+    end if;
+
     perform pg_sleep(0.01);
   end loop;
-  raise exception 'timed out waiting for integration_coord %=%', '$key', '$value';
+  raise exception 'timed out waiting for reset xact lock on connection A';
 end;
-\$wait_for_coord\$;
+\$wait_for_reset_xact_lock\$;
 SQL
 }
 
@@ -58,7 +72,6 @@ psql -v ON_ERROR_STOP=1 <<SQL &
 begin;
 select pg_catalog.set_config('application_name', 'integration_conn_a', false);
 select public.reset_demo_data('$OPERATOR_ID'::uuid);
-insert into public.integration_coord (k, v) values ('conn_a', 'holding');
 do \$wait_for_conn_a_proceed\$
 declare
   i integer;
@@ -81,7 +94,12 @@ commit;
 SQL
 CONN_A_PID=$!
 
-wait_for_coord conn_a holding
+if ! wait_for_reset_xact_lock; then
+  kill "$CONN_A_PID" 2>/dev/null || true
+  wait "$CONN_A_PID" 2>/dev/null || true
+  exit 1
+fi
+
 echo "integration: connection A reset complete, holding open transaction"
 
 set +e
