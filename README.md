@@ -269,6 +269,7 @@ curl -i -X POST "http://localhost:3000/api/admin/demo/reset" \
 
 | Document | Content |
 | --- | --- |
+| [`docs/deployment-runbook.md`](docs/deployment-runbook.md) | Hosted rollout order, CI vs manual verification, rollback |
 | [`docs/portfolio-case-study.md`](docs/portfolio-case-study.md) | Problem, solution, engineering decisions, evidence |
 | [`docs/supabase-processing-audit.md`](docs/supabase-processing-audit.md) | Audit schema, idempotency keys, access rights, verification SQL |
 | [`docs/demo-script.md`](docs/demo-script.md) | Script for a 2–3 minute demo video |
