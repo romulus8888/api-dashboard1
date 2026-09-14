@@ -11,28 +11,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      PGHOST: localhost
-      PGPORT: 5432
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: postgres
-      PGSSLMODE: disable
       NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
       NEXT_PUBLIC_SUPABASE_ANON_KEY: disposable-test-anon-key
       SUPABASE_SERVICE_ROLE_KEY: disposable-test-service-role-key
@@ -62,22 +42,5 @@ jobs:
       - name: Scan client bundles for service_role canaries
         run: bash scripts/scan-client-bundle-secrets.sh
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-
       - name: Disposable SQL migrations and verification
-        run: |
-          set -euxo pipefail
-          export DISPOSABLE_VALIDATION_TRACK=clean
-          psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
-          bash scripts/validate-disposable-database.sh bootstrap
-          for verify in supabase/verify/*.sql; do
-            bash scripts/validate-disposable-database.sh verify-file "$verify"
-          done
-          bash scripts/validate-disposable-database.sh integration
-          psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
-          psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
-          psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
-          export DISPOSABLE_VALIDATION_TRACK=legacy
-          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
-          bash scripts/validate-disposable-database.sh all
+        run: bash scripts/ci-disposable-validation.sh
