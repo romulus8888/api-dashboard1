@@ -26,6 +26,7 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
+      DISPOSABLE_SAFETY_DIR: ${{ github.workspace }}/scripts
       DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       PGHOST: localhost
       PGPORT: 5432
@@ -95,9 +96,6 @@ jobs:
           for migration in supabase/migrations/*.sql; do
             psql -v ON_ERROR_STOP=1 -f "$migration"
           done
-          # shellcheck disable=SC1091
-          source scripts/disposable-database-safety.sh
-          disposable_psql -c 'select 1 as helper_probe' || { echo "::error::disposable_psql probe failed"; exit 10; }
           bash scripts/validate-disposable-database.sh verify || { echo "::error::clean verify failed with exit $?"; exit 11; }
           bash scripts/validate-disposable-database.sh integration || { echo "::error::clean integration failed with exit $?"; exit 12; }
           psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true

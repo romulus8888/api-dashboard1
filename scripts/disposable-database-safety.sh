@@ -11,7 +11,7 @@ if [[ -n "${DISPOSABLE_DATABASE_SAFETY_LOADED:-}" ]]; then
   return 0
 fi
 DISPOSABLE_DATABASE_SAFETY_LOADED=1
-DISPOSABLE_SAFETY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DISPOSABLE_SAFETY_DIR="${DISPOSABLE_SAFETY_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 disposable_require_ack() {
   if [[ "${DISPOSABLE_TEST_ACK:-}" != "yes" ]]; then
