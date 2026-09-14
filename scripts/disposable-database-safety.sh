@@ -130,8 +130,7 @@ disposable_psql() {
   fi
 
   unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
-  eval "$(node "$DISPOSABLE_SAFETY_DIR/disposable-pg-env.mjs")"
-  psql -v ON_ERROR_STOP=1 "$@"
+  psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 "$@"
 }
 
 wait_for_disposable_postgres() {
