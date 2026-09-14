@@ -163,7 +163,10 @@ run_disappearance_case() {
   local prior_changed_by="$3"
   local prior_reason="$4"
   local conn_a_log
+  local fifo_conn_a_started
   conn_a_log="$(mktemp)"
+  fifo_conn_a_started="$(mktemp -u)"
+  mkfifo "$fifo_conn_a_started"
 
   psql -v ON_ERROR_STOP=1 <<SQL
 insert into public.leads (
@@ -184,10 +187,11 @@ SQL
 
   psql -v ON_ERROR_STOP=1 <<SQL >"$conn_a_log" 2>&1 &
 begin;
-set local application_name = 'integration_conn_a';
+select pg_catalog.set_config('application_name', 'integration_conn_a', false);
 select pg_catalog.set_config('lead.status_change_source', '$prior_source', true);
 select pg_catalog.set_config('lead.status_changed_by', '$prior_changed_by', true);
 select pg_catalog.set_config('lead.status_change_reason', '$prior_reason', true);
+\! echo started > '$fifo_conn_a_started'
 do \$verify_case\$
 declare
   v_caught boolean := false;
@@ -234,19 +238,21 @@ rollback;
 SQL
   local conn_a_pid=$!
 
+  read -r _ <"$fifo_conn_a_started"
+
   if ! wait_for_update_pause "$case_label"; then
     kill "$conn_a_pid" 2>/dev/null || true
     wait "$conn_a_pid" 2>/dev/null || true
     cat "$conn_a_log" >&2
-    rm -f "$conn_a_log"
+    rm -f "$conn_a_log" "$fifo_conn_a_started"
     return 1
   fi
 
   echo "integration: transition reached update pause ($case_label)"
 
   psql -v ON_ERROR_STOP=1 <<SQL
+select pg_catalog.set_config('application_name', 'integration_conn_b', false);
 begin;
-set local application_name = 'integration_conn_b';
 delete from public.leads where id = '$LEAD_ID';
 commit;
 SQL
@@ -258,18 +264,18 @@ SQL
   if [[ $conn_a_status -ne 0 ]]; then
     cat "$conn_a_log" >&2
     echo "connection A failed ($case_label)" >&2
-    rm -f "$conn_a_log"
+    rm -f "$conn_a_log" "$fifo_conn_a_started"
     return 1
   fi
 
   if grep -E 'ERROR:|FATAL:' "$conn_a_log" >/dev/null; then
     cat "$conn_a_log" >&2
     echo "connection A reported SQL errors ($case_label)" >&2
-    rm -f "$conn_a_log"
+    rm -f "$conn_a_log" "$fifo_conn_a_started"
     return 1
   fi
 
-  rm -f "$conn_a_log"
+  rm -f "$conn_a_log" "$fifo_conn_a_started"
 }
 
 run_disappearance_case \

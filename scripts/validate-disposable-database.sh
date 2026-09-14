@@ -182,7 +182,8 @@ run_integration_scripts() {
   local integration
   for integration in "${integration_scripts[@]}"; do
     echo "==> integration: $(basename "$integration")"
-    if ! bash "$integration"; then
+    if ! bash "$integration" 2>&1 | tee /tmp/"$(basename "$integration")".log; then
+      cat /tmp/"$(basename "$integration")".log >&2
       if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
         echo "::error title=integration failed::$(basename "$integration")" >&2
       fi
