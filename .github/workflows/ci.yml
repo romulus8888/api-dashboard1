@@ -69,4 +69,7 @@ jobs:
         run: |
           set -euxo pipefail
           psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
-          bash scripts/validate-disposable-database.sh
+          bash scripts/validate-disposable-database.sh bootstrap
+          for verify in supabase/verify/*.sql; do
+            bash scripts/validate-disposable-database.sh verify-file "$verify"
+          done

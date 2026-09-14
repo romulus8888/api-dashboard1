@@ -112,6 +112,12 @@ run_sql_file() {
   echo "==> $label: $(basename "$file")"
   if ! psql -v ON_ERROR_STOP=1 -f "$file" >"$log" 2>&1; then
     cat "$log" >&2
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+      echo "::error title=${label} SQL failed::$(basename "$file")" >&2
+      grep -E 'ERROR:|FATAL:|failed|exception' "$log" | head -10 | while IFS= read -r line; do
+        echo "::error::${line}" >&2
+      done || true
+    fi
     echo "FAILED ${label}: $(basename "$file")" >&2
     rm -f "$log"
     exit 3
@@ -119,7 +125,7 @@ run_sql_file() {
   rm -f "$log"
 }
 
-main() {
+prepare_connection() {
   require_ack
   require_database_url
   refuse_production_like_target "$(resolve_hostname)"
@@ -127,7 +133,9 @@ main() {
   export PGSSLMODE="${PGSSLMODE:-disable}"
   require_psql
   wait_for_postgres
+}
 
+run_fixtures_and_migrations() {
   if [[ ! -f "$FIXTURES" ]]; then
     echo "Missing fixture file: $FIXTURES" >&2
     exit 1
@@ -146,7 +154,10 @@ main() {
   for migration in "${migrations[@]}"; do
     run_sql_file "migration" "$migration"
   done
+}
 
+run_verify_scripts() {
+  shopt -s nullglob
   local verify_scripts=( "$VERIFY_DIR"/*.sql )
   if (( ${#verify_scripts[@]} == 0 )); then
     echo "No verification scripts found in $VERIFY_DIR" >&2
@@ -157,6 +168,38 @@ main() {
   for verify in "${verify_scripts[@]}"; do
     run_sql_file "verify" "$verify"
   done
+}
+
+main() {
+  local mode="${1:-all}"
+
+  case "$mode" in
+    all)
+      prepare_connection
+      run_fixtures_and_migrations
+      run_verify_scripts
+      ;;
+    bootstrap)
+      prepare_connection
+      run_fixtures_and_migrations
+      ;;
+    verify)
+      prepare_connection
+      run_verify_scripts
+      ;;
+    verify-file)
+      if [[ $# -lt 2 ]]; then
+        echo "verify-file requires a path to a .sql file" >&2
+        exit 1
+      fi
+      prepare_connection
+      run_sql_file "verify" "$2"
+      ;;
+    *)
+      echo "Unknown mode: $mode (expected all, bootstrap, verify, or verify-file)" >&2
+      exit 1
+      ;;
+  esac
 
   echo "OK: disposable database migrations and verification passed."
 }
