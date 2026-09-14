@@ -6,8 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTAINER_NAME="${DISPOSABLE_CI_CONTAINER_NAME:-disposable-postgres}"
 PG_IMAGE="${DISPOSABLE_CI_POSTGRES_IMAGE:-postgres:16}"
 PG_PASSWORD="${DISPOSABLE_CI_POSTGRES_PASSWORD:-postgres}"
-BASE_URL="postgresql://postgres:${PG_PASSWORD}@localhost/postgres"
-LEGACY_URL="postgresql://postgres:${PG_PASSWORD}@localhost/postgres_legacy"
+BASE_URL="postgresql://postgres:${PG_PASSWORD}@localhost:55432/postgres"
+LEGACY_URL="postgresql://postgres:${PG_PASSWORD}@localhost:55432/postgres_legacy"
 
 cleanup_container() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
