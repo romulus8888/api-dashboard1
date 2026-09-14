@@ -85,9 +85,7 @@ begin
     perform pg_catalog.set_config('lead.status_changed_by', coalesce(p_changed_by::text, ''::text), true);
     perform pg_catalog.set_config('lead.status_change_reason', coalesce(p_reason, ''::text), true);
 
-    if coalesce(pg_catalog.current_setting('verify.integration_pause', true), ''::text) = 'yes'::text then
-      perform pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
-    end if;
+    perform pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
 
     update public.leads
     set
@@ -127,11 +125,26 @@ do \$wait_for_update_pause\$
 declare
   i integer;
 begin
-  for i in 1..300 loop
-    if not pg_catalog.pg_try_advisory_lock($UPDATE_COORD_LOCK) then
+  for i in 1..600 loop
+    if exists (
+      select 1
+      from pg_catalog.pg_locks l
+      join pg_catalog.pg_stat_activity a on a.pid = l.pid
+      where l.locktype = 'advisory'
+        and l.granted
+        and a.application_name = 'integration_conn_a'
+    ) then
       return;
     end if;
-    perform pg_catalog.pg_advisory_unlock($UPDATE_COORD_LOCK);
+
+    if not exists (
+      select 1
+      from pg_catalog.pg_stat_activity
+      where application_name = 'integration_conn_a'
+    ) then
+      raise exception 'connection A is not active';
+    end if;
+
     perform pg_sleep(0.01);
   end loop;
   raise exception 'timed out waiting for transition update pause';
@@ -175,8 +188,6 @@ set local application_name = 'integration_conn_a';
 select pg_catalog.set_config('lead.status_change_source', '$prior_source', true);
 select pg_catalog.set_config('lead.status_changed_by', '$prior_changed_by', true);
 select pg_catalog.set_config('lead.status_change_reason', '$prior_reason', true);
-select pg_catalog.set_config('verify.integration_pause', 'yes', true);
-
 do \$verify_case\$
 declare
   v_caught boolean := false;
