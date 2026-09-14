@@ -35,6 +35,39 @@ run_validate() {
   fi
 }
 
+apply_sql_in_container() {
+  local database="$1"
+  local label="$2"
+  local file="$3"
+  local rel="${file#"$ROOT"/}"
+  log "${label}: $(basename "$file")"
+  docker exec -i "$CONTAINER_NAME" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 \
+    -f "/workspace/$rel"
+}
+
+apply_clean_bootstrap() {
+  apply_sql_in_container postgres fixture "$ROOT/supabase/fixtures/disposable-test-prerequisites.sql"
+  shopt -s nullglob
+  local migration
+  for migration in "$ROOT"/supabase/migrations/*.sql; do
+    apply_sql_in_container postgres migration "$migration"
+  done
+}
+
+apply_legacy_bootstrap() {
+  apply_sql_in_container postgres_legacy fixture "$ROOT/supabase/fixtures/disposable-test-prerequisites.sql"
+  apply_sql_in_container postgres_legacy legacy-fixture "$ROOT/supabase/legacy/fixtures/legacy-jobs-stub.sql"
+  apply_sql_in_container postgres_legacy legacy-migration \
+    "$ROOT/supabase/legacy/migrations/20260814000000_create_job_processing_audit.sql"
+  shopt -s nullglob
+  local migration
+  for migration in "$ROOT"/supabase/migrations/*.sql; do
+    apply_sql_in_container postgres_legacy migration "$migration"
+  done
+  apply_sql_in_container postgres_legacy legacy-migration \
+    "$ROOT/supabase/legacy/migrations/20260910180000_lockdown_legacy_jobs.sql"
+}
+
 trap cleanup_container EXIT
 cleanup_container
 
@@ -61,11 +94,11 @@ export DISPOSABLE_TEST_ACK=yes
 export DISPOSABLE_DATABASE_URL="$BASE_URL"
 export DISPOSABLE_PSQL_MODE=docker-exec
 export DISPOSABLE_CI_CONTAINER_NAME="$CONTAINER_NAME"
-export DISPOSABLE_CI_WORKSPACE_ROOT=/workspace
 export DISPOSABLE_CI_HOST_WORKSPACE_ROOT="$ROOT"
 
 export DISPOSABLE_VALIDATION_TRACK=clean
-run_validate "clean track bootstrap" 10 bootstrap
+log "clean track bootstrap"
+apply_clean_bootstrap
 
 log "clean track verify"
 shopt -s nullglob
@@ -85,6 +118,16 @@ docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1
 
 export DISPOSABLE_VALIDATION_TRACK=legacy
 export DISPOSABLE_DATABASE_URL="$LEGACY_URL"
-run_validate "legacy track validation" 13 all
+
+log "legacy track bootstrap"
+apply_legacy_bootstrap
+
+log "legacy track verify"
+for verify in "$ROOT"/supabase/verify/*.sql; do
+  run_validate "legacy track verify $(basename "$verify")" 13 verify-file "$verify"
+done
+for verify in "$ROOT"/supabase/legacy/verify/*.sql; do
+  run_validate "legacy track verify $(basename "$verify")" 13 verify-file "$verify"
+done
 
 log "clean and legacy disposable validation passed"
