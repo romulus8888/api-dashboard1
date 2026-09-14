@@ -54,6 +54,8 @@ describe("phase11 clean install readiness", () => {
     expect(validation).toMatch(/run_clean_bootstrap/);
     expect(validation).toMatch(/run_legacy_bootstrap/);
     expect(validation).toMatch(/supabase\/legacy\/migrations/);
+    expect(validation).toMatch(/phase11_clean_install\.sql/);
+    expect(validation).toMatch(/clean-install guard only/);
     expect(cleanGuard).toMatch(/public\.jobs must not exist/i);
     expect(cleanGuard).toMatch(/public\.job_processing_audit must not exist/i);
     expect(prerequisites).not.toMatch(/create table if not exists public\.jobs/i);
