@@ -52,7 +52,7 @@ disposable_refuse_production_like_target() {
   esac
 
   case "$host" in
-    localhost|127.0.0.1|::1|postgres)
+    localhost|127.0.0.1|::1|postgres|disposable-postgres)
       return 0
       ;;
   esac
