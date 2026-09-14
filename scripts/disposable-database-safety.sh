@@ -109,16 +109,7 @@ disposable_psql() {
     local database
     database="$(disposable_resolve_database_name)"
     if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
-      local host_path="$2"
-      local host_root="${DISPOSABLE_CI_HOST_WORKSPACE_ROOT:-}"
-      local container_path
-      if [[ -n "$host_root" && "$host_path" == "$host_root"/* ]]; then
-        container_path="${workspace_root}/${host_path#"$host_root"/}"
-      else
-        docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 < "$host_path"
-        return
-      fi
-      docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 -f "$container_path"
+      docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 < "$2"
       return
     fi
     docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 "$@"
