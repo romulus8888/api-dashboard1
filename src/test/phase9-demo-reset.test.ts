@@ -44,6 +44,7 @@ describe("phase9 demo reset migration", () => {
     expect(verifySql).toMatch(/legacy jobs row % must survive reset/i);
     expect(verifySql).toMatch(/operator profile % must survive reset/i);
     expect(verifySql).toMatch(/auth user % must survive reset/i);
+    expect(verifySql).toMatch(/separate transaction: reset_demo_data uses/i);
     expect(verifySql).toMatch(/repeated reset must not accumulate seed rows/i);
     expect(verifySql).toMatch(/repeated reset must issue a new demo_reset_group_id/i);
     expect(verifySql).toMatch(/rate-limit bucket fixture must survive reset/i);

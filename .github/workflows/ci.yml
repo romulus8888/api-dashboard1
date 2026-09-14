@@ -26,7 +26,8 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      PGSSLMODE: disable
       NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
       NEXT_PUBLIC_SUPABASE_ANON_KEY: disposable-test-anon-key
       SUPABASE_SERVICE_ROLE_KEY: disposable-test-service-role-key
