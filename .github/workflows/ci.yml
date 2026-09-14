@@ -89,13 +89,13 @@ jobs:
           require_disposable_database_target
           disposable_psql -c 'select 1 as disposable_helper_ready'
           export DISPOSABLE_VALIDATION_TRACK=clean
-          bash scripts/validate-disposable-database.sh bootstrap
-          bash scripts/validate-disposable-database.sh verify
-          bash scripts/validate-disposable-database.sh integration
+          bash scripts/validate-disposable-database.sh bootstrap || { echo "::error::clean bootstrap failed with exit $?"; exit 10; }
+          bash scripts/validate-disposable-database.sh verify || { echo "::error::clean verify failed with exit $?"; exit 11; }
+          bash scripts/validate-disposable-database.sh integration || { echo "::error::clean integration failed with exit $?"; exit 12; }
           psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
           psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
           psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy template template0'
           export DISPOSABLE_VALIDATION_TRACK=legacy
           export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy?sslmode=disable
-          bash scripts/validate-disposable-database.sh bootstrap
-          bash scripts/validate-disposable-database.sh verify
+          bash scripts/validate-disposable-database.sh bootstrap || { echo "::error::legacy bootstrap failed with exit $?"; exit 20; }
+          bash scripts/validate-disposable-database.sh verify || { echo "::error::legacy verify failed with exit $?"; exit 21; }
