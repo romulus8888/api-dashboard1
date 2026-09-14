@@ -85,10 +85,22 @@ require_disposable_database_target() {
   disposable_require_psql
 }
 
+disposable_resolve_database_name() {
+  node -e "const u = new URL(process.env.DISPOSABLE_DATABASE_URL); process.stdout.write((u.pathname || '/postgres').replace(/^\//, '') || 'postgres');"
+}
+
 disposable_psql() {
   if [[ -z "${DISPOSABLE_DATABASE_URL:-}" ]]; then
     echo "DISPOSABLE_DATABASE_URL is required (postgresql://…)." >&2
     exit 1
+  fi
+
+  if [[ "${DISPOSABLE_PSQL_MODE:-}" == "docker-exec" ]]; then
+    local container="${DISPOSABLE_CI_CONTAINER_NAME:-disposable-postgres}"
+    local database
+    database="$(disposable_resolve_database_name)"
+    docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 "$@"
+    return
   fi
 
   unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE PGSSLMODE

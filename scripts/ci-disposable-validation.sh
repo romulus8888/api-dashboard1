@@ -6,9 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTAINER_NAME="${DISPOSABLE_CI_CONTAINER_NAME:-disposable-postgres}"
 PG_IMAGE="${DISPOSABLE_CI_POSTGRES_IMAGE:-postgres:16}"
 PG_PASSWORD="${DISPOSABLE_CI_POSTGRES_PASSWORD:-postgres}"
-PG_PORT="${DISPOSABLE_CI_POSTGRES_PORT:-5433}"
-BASE_URL="postgresql://postgres:${PG_PASSWORD}@127.0.0.1:${PG_PORT}/postgres"
-LEGACY_URL="postgresql://postgres:${PG_PASSWORD}@127.0.0.1:${PG_PORT}/postgres_legacy"
+BASE_URL="postgresql://postgres:${PG_PASSWORD}@disposable-postgres/postgres"
+LEGACY_URL="postgresql://postgres:${PG_PASSWORD}@disposable-postgres/postgres_legacy"
 
 cleanup_container() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -47,10 +46,9 @@ run_validate() {
 trap cleanup_container EXIT
 cleanup_container
 
-log "starting ${PG_IMAGE} on port ${PG_PORT}"
+log "starting ${PG_IMAGE}"
 docker run -d --name "$CONTAINER_NAME" \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" \
-  -p "${PG_PORT}:5432" \
   "$PG_IMAGE" >/dev/null
 
 attempts=60
@@ -68,12 +66,11 @@ fi
 
 export DISPOSABLE_TEST_ACK=yes
 export DISPOSABLE_DATABASE_URL="$BASE_URL"
-export PGHOST=127.0.0.1
-export PGPORT="$PG_PORT"
+export DISPOSABLE_PSQL_MODE=docker-exec
+export DISPOSABLE_CI_CONTAINER_NAME="$CONTAINER_NAME"
 export PGUSER=postgres
 export PGPASSWORD="$PG_PASSWORD"
 export PGDATABASE=postgres
-export PGSSLMODE=disable
 
 export DISPOSABLE_VALIDATION_TRACK=clean
 run_validate "clean track bootstrap" 10 bootstrap
@@ -87,9 +84,12 @@ done
 run_validate "clean track integration" 12 integration
 
 log "preparing legacy database"
-psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
-psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
-psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
+docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
+docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -c 'drop database if exists postgres_legacy'
+docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -c 'create database postgres_legacy'
 
 export DISPOSABLE_VALIDATION_TRACK=legacy
 export DISPOSABLE_DATABASE_URL="$LEGACY_URL"
