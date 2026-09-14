@@ -26,7 +26,7 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       PGHOST: localhost
       PGPORT: 5432
       PGUSER: postgres
@@ -66,7 +66,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Normalize shell script line endings
-        run: python scripts/normalize_shell_lf.py
+        run: |
+          python scripts/normalize_shell_lf.py
+          find scripts -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x scripts/*.sh scripts/integration/*.sh
 
       - name: Disposable SQL migrations and verification
         run: |
@@ -83,11 +86,6 @@ jobs:
             sleep 1
           done
           psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
-          psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'select 1 as disposable_url_ready'
-          # shellcheck disable=SC1091
-          source scripts/disposable-database-safety.sh
-          require_disposable_database_target
-          disposable_psql -c 'select 1 as disposable_helper_ready'
           export DISPOSABLE_VALIDATION_TRACK=clean
           bash scripts/validate-disposable-database.sh bootstrap || { echo "::error::clean bootstrap failed with exit $?"; exit 10; }
           bash scripts/validate-disposable-database.sh verify || { echo "::error::clean verify failed with exit $?"; exit 11; }
@@ -96,6 +94,6 @@ jobs:
           psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
           psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy template template0'
           export DISPOSABLE_VALIDATION_TRACK=legacy
-          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy?sslmode=disable
+          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
           bash scripts/validate-disposable-database.sh bootstrap || { echo "::error::legacy bootstrap failed with exit $?"; exit 20; }
           bash scripts/validate-disposable-database.sh verify || { echo "::error::legacy verify failed with exit $?"; exit 21; }

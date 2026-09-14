@@ -129,7 +129,19 @@ disposable_psql() {
   fi
 
   unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
-  psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 "$@"
+  eval "$(node -e "
+    const u = new URL(process.env.DISPOSABLE_DATABASE_URL);
+    const esc = (value) => \"'\" + String(value).replace(/'/g, \"'\\''\") + \"'\";
+    const db = (u.pathname || '/postgres').replace(/^\\//, '') || 'postgres';
+    process.stdout.write(
+      'PGHOST=' + esc(u.hostname) + ' ' +
+      'PGPORT=' + esc(u.port || '5432') + ' ' +
+      'PGUSER=' + esc(decodeURIComponent(u.username)) + ' ' +
+      'PGPASSWORD=' + esc(decodeURIComponent(u.password)) + ' ' +
+      'PGDATABASE=' + esc(db)
+    );
+  ")"
+  psql -v ON_ERROR_STOP=1 "$@"
 }
 
 wait_for_disposable_postgres() {
