@@ -16,6 +16,7 @@ restore_transition_lead_status() {
 cleanup_objects() {
   restore_transition_lead_status || true
   psql -v ON_ERROR_STOP=1 <<SQL || true
+drop table if exists public.integration_coord;
 delete from public.leads where id = '$LEAD_ID';
 delete from public.operator_profiles where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
 delete from auth.users where id in ('$PRIMARY_OPERATOR_ID', '$SECOND_OPERATOR_ID');
@@ -24,6 +25,12 @@ SQL
 trap cleanup_objects EXIT
 
 psql -v ON_ERROR_STOP=1 <<SQL
+create table if not exists public.integration_coord (
+  k text primary key,
+  v text not null
+);
+truncate public.integration_coord;
+
 insert into auth.users (id, email)
 values
   ('$PRIMARY_OPERATOR_ID', 'integration-primary@example.com'),
@@ -38,6 +45,32 @@ on conflict (id) do update set is_active = excluded.is_active;
 SQL
 
 psql -v ON_ERROR_STOP=1 -f "$SQL_DIR/transition_lead_status_with_pause.sql"
+
+wait_for_coord() {
+  local key="$1"
+  local value="$2"
+  local case_label="$3"
+  psql -v ON_ERROR_STOP=1 <<SQL
+do \$wait_for_coord\$
+declare
+  i integer;
+begin
+  for i in 1..600 loop
+    if exists (
+      select 1
+      from public.integration_coord
+      where k = '$key'
+        and v = '$value'
+    ) then
+      return;
+    end if;
+    perform pg_sleep(0.01);
+  end loop;
+  raise exception 'timed out waiting for integration_coord %=% (%s)', '$key', '$value', '$case_label';
+end;
+\$wait_for_coord\$;
+SQL
+}
 
 wait_for_conn_a_blocked() {
   local case_label="$1"
@@ -82,17 +115,11 @@ run_disappearance_case() {
   local prior_source="$2"
   local prior_changed_by="$3"
   local prior_reason="$4"
-  local fifo_hold_ready fifo_hold_proceed conn_a_log
-  fifo_hold_ready="$(mktemp -u)"
-  fifo_hold_proceed="$(mktemp -u)"
+  local conn_a_log conn_hold_log
   conn_a_log="$(mktemp)"
-  mkfifo "$fifo_hold_ready" "$fifo_hold_proceed"
+  conn_hold_log="$(mktemp)"
 
-  cleanup_hold() {
-    echo proceed >"$fifo_hold_proceed" 2>/dev/null || true
-    rm -f "$fifo_hold_ready" "$fifo_hold_proceed"
-  }
-  trap cleanup_hold RETURN
+  psql -v ON_ERROR_STOP=1 -c "truncate public.integration_coord;"
 
   psql -v ON_ERROR_STOP=1 <<SQL
 insert into public.leads (
@@ -111,21 +138,36 @@ on conflict (id) do update
 set status = excluded.status;
 SQL
 
-  psql -v ON_ERROR_STOP=1 <<SQL &
+  psql -v ON_ERROR_STOP=1 >"$conn_hold_log" 2>&1 <<SQL &
 begin;
 select pg_catalog.set_config('application_name', 'integration_conn_hold', false);
 select pg_catalog.pg_advisory_lock($UPDATE_COORD_LOCK);
-\echo integration: hold connection acquired update pause lock
-\! echo ready > '$fifo_hold_ready'
-\! read _ < '$fifo_hold_proceed'
+insert into public.integration_coord (k, v) values ('hold', 'ready');
+do \$wait_for_hold_proceed\$
+declare
+  i integer;
+begin
+  for i in 1..600 loop
+    if exists (
+      select 1
+      from public.integration_coord
+      where k = 'proceed'
+        and v = 'yes'
+    ) then
+      return;
+    end if;
+    perform pg_sleep(0.01);
+  end loop;
+  raise exception 'timed out waiting for hold proceed signal';
+end;
+\$wait_for_hold_proceed\$;
 delete from public.leads where id = '$LEAD_ID';
 select pg_catalog.pg_advisory_unlock($UPDATE_COORD_LOCK);
 commit;
-\echo integration: hold connection released update pause lock
 SQL
   local conn_hold_pid=$!
 
-  read -r _ <"$fifo_hold_ready"
+  wait_for_coord hold ready "$case_label"
   echo "integration: hold connection blocks update pause ($case_label)"
 
   psql -v ON_ERROR_STOP=1 >"$conn_a_log" 2>&1 <<SQL &
@@ -183,33 +225,41 @@ SQL
     kill "$conn_a_pid" "$conn_hold_pid" 2>/dev/null || true
     wait "$conn_a_pid" 2>/dev/null || true
     wait "$conn_hold_pid" 2>/dev/null || true
-    cat "$conn_a_log" >&2
-    rm -f "$conn_a_log"
+    cat "$conn_hold_log" "$conn_a_log" >&2
+    rm -f "$conn_hold_log" "$conn_a_log"
     return 1
   fi
 
   echo "integration: connection A blocked on update pause ($case_label)"
-  echo proceed >"$fifo_hold_proceed"
+  psql -v ON_ERROR_STOP=1 -c "insert into public.integration_coord (k, v) values ('proceed', 'yes') on conflict (k) do update set v = excluded.v;"
 
   wait "$conn_hold_pid"
+  local conn_hold_status=$?
   wait "$conn_a_pid"
   local conn_a_status=$?
+
+  if [[ $conn_hold_status -ne 0 ]]; then
+    cat "$conn_hold_log" >&2
+    echo "hold connection failed ($case_label)" >&2
+    rm -f "$conn_hold_log" "$conn_a_log"
+    return 1
+  fi
 
   if [[ $conn_a_status -ne 0 ]]; then
     cat "$conn_a_log" >&2
     echo "connection A failed ($case_label)" >&2
-    rm -f "$conn_a_log"
+    rm -f "$conn_hold_log" "$conn_a_log"
     return 1
   fi
 
-  if grep -E 'ERROR:|FATAL:' "$conn_a_log" >/dev/null; then
-    cat "$conn_a_log" >&2
-    echo "connection A reported SQL errors ($case_label)" >&2
-    rm -f "$conn_a_log"
+  if grep -E 'ERROR:|FATAL:' "$conn_hold_log" "$conn_a_log" >/dev/null; then
+    cat "$conn_hold_log" "$conn_a_log" >&2
+    echo "integration reported SQL errors ($case_label)" >&2
+    rm -f "$conn_hold_log" "$conn_a_log"
     return 1
   fi
 
-  rm -f "$conn_a_log"
+  rm -f "$conn_hold_log" "$conn_a_log"
 }
 
 run_disappearance_case \
