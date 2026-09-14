@@ -66,14 +66,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Clean disposable database validation
+        env:
+          DISPOSABLE_VALIDATION_TRACK: clean
         run: |
           set -euxo pipefail
-          psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
-          bash scripts/validate-disposable-database.sh clean bootstrap
+          bash scripts/validate-disposable-database.sh bootstrap
           for verify in supabase/verify/*.sql; do
-            bash scripts/validate-disposable-database.sh clean verify-file "$verify"
+            bash scripts/validate-disposable-database.sh verify-file "$verify"
           done
-          bash scripts/validate-disposable-database.sh clean integration
+          bash scripts/validate-disposable-database.sh integration
 
       - name: Legacy disposable database validation
         env:
@@ -81,7 +82,7 @@ jobs:
           DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_legacy?sslmode=disable
         run: |
           set -euxo pipefail
-          psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
-          psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
-          psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
-          bash scripts/validate-disposable-database.sh legacy all
+          PGSSLMODE=disable psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
+          PGSSLMODE=disable psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
+          PGSSLMODE=disable psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
+          bash scripts/validate-disposable-database.sh all
