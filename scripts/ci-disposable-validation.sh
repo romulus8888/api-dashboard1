@@ -41,8 +41,10 @@ apply_sql_in_container() {
   local file="$3"
   local rel="${file#"$ROOT"/}"
   log "${label}: $(basename "$file")"
-  docker exec -i "$CONTAINER_NAME" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 \
-    -f "/workspace/$rel"
+  if ! docker exec -i "$CONTAINER_NAME" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 \
+    -f "/workspace/$rel"; then
+    fail 11 "SQL failed for ${label}: $(basename "$file")"
+  fi
 }
 
 apply_clean_bootstrap() {
