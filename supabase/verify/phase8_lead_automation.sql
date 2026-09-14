@@ -60,7 +60,7 @@ begin
     raise exception 'expected first claim true, got %', v_claimed;
   end if;
 
-  select automation_state into v_lead from public.leads where id = v_lead_id;
+  select * into v_lead from public.leads where id = v_lead_id;
   if v_lead.automation_state is distinct from 'processing' then
     raise exception 'expected automation_state=processing after claim';
   end if;
@@ -97,7 +97,7 @@ begin
     raise exception 'expected completion true, got %', v_completed;
   end if;
 
-  select automation_state into v_lead from public.leads where id = v_lead_id;
+  select * into v_lead from public.leads where id = v_lead_id;
   if v_lead.automation_state is distinct from 'succeeded' then
     raise exception 'expected automation_state=succeeded after completion';
   end if;
@@ -133,7 +133,7 @@ begin
     raise exception 'expected post-claim failure count=1, got %', v_failed;
   end if;
 
-  select automation_state, status into v_lead from public.leads where id = v_lead_id;
+  select * into v_lead from public.leads where id = v_lead_id;
   if v_lead.automation_state is distinct from 'failed' then
     raise exception 'expected automation_state=failed after failure';
   end if;
@@ -260,7 +260,7 @@ begin
     raise exception 'completed claim must remain succeeded';
   end if;
 
-  select automation_state, status into v_lead from public.leads where id = v_lead_c;
+  select * into v_lead from public.leads where id = v_lead_c;
   if v_lead.automation_state is distinct from 'succeeded'
      or v_lead.status is distinct from 'new'::public.lead_status then
     raise exception 'completed lead must remain untouched by multi failure';
@@ -334,7 +334,7 @@ begin
   -- --------------------------------------------------------------------------
   -- Illegal / concurrent retry behavior
   -- --------------------------------------------------------------------------
-  select automation_state into v_lead from public.leads where id = v_lead_id;
+  select * into v_lead from public.leads where id = v_lead_id;
 
   if v_lead.automation_state is distinct from 'processing' then
     raise exception
@@ -342,8 +342,6 @@ begin
       v_lead_id,
       v_lead.automation_state;
   end if;
-
-  perform public.clear_lead_status_attribution_gucs();
 
   begin
     perform public.retry_lead_automation(v_lead_id, v_operator_id);
