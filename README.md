@@ -190,7 +190,7 @@ Then import the two workflows and connect credentials:
 | Manual automation retry (dashboard API + RPC) | Yes | Automatic retry |
 | Synthetic demo reset (dashboard API + RPC) | Yes | Scheduled reset |
 | Automated tests (Vitest) | Yes | — |
-| CI pipeline | No | Add hosted verification in CI |
+| CI pipeline (Vitest + disposable Postgres 16 SQL) | Yes | Hosted Supabase staging checks |
 | Public webhook / Kafka | No | Future iteration |
 
 ## Current limitations
@@ -211,7 +211,7 @@ Stated explicitly:
   increments `automation_attempt`; stale `processing` claims must be resolved
   separately. Legacy `public.jobs` workflows still block on `job.created:<job_id>`.
 - **No message broker** (Kafka, Redpanda, etc.).
-- **Vitest exists; CI does not.** SQL and n8n runtime verification remain manual.
+- **CI covers Vitest, lint, build, and disposable Postgres SQL.** Hosted Supabase deploy checks and n8n runtime verification remain manual.
 - **Telegram** requires local bot token and chat ID in n8n credentials.
 
 ## Documented manual verification procedures

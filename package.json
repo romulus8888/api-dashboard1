@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "validate:sql:disposable": "bash scripts/validate-disposable-database.sh",
+    "scan:client-secrets": "bash scripts/scan-client-bundle-secrets.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

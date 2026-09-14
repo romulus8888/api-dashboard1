@@ -13,6 +13,16 @@ The complete production migration chain is **not** reproducible from this reposi
 
 ## Apply order (fresh disposable database)
 
+Prefer the automated chain (CI and local):
+
+```bash
+export DISPOSABLE_TEST_ACK=yes
+export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
+bash scripts/validate-disposable-database.sh
+```
+
+Manual equivalent (not recommended):
+
 ```bash
 psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
   -f supabase/fixtures/disposable-test-prerequisites.sql \
@@ -20,6 +30,8 @@ psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
   -f supabase/migrations/20260910120000_create_lead_schema_and_status_history.sql \
   -f supabase/verify/phase1_lead_schema.sql
 ```
+
+**These files are not migrations.** They live outside `supabase/migrations/` and must never be applied to hosted Supabase.
 
 ## Trust boundary (actor attribution)
 
