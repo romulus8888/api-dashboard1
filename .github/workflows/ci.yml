@@ -73,3 +73,4 @@ jobs:
           for verify in supabase/verify/*.sql; do
             bash scripts/validate-disposable-database.sh verify-file "$verify"
           done
+          bash scripts/validate-disposable-database.sh integration

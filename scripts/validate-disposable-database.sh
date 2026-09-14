@@ -170,6 +170,28 @@ run_verify_scripts() {
   done
 }
 
+run_integration_scripts() {
+  local integration_dir="$ROOT/scripts/integration"
+  shopt -s nullglob
+  local integration_scripts=( "$integration_dir"/*.sh )
+  if (( ${#integration_scripts[@]} == 0 )); then
+    echo "No integration scripts found in $integration_dir" >&2
+    exit 1
+  fi
+
+  local integration
+  for integration in "${integration_scripts[@]}"; do
+    echo "==> integration: $(basename "$integration")"
+    if ! bash "$integration"; then
+      if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        echo "::error title=integration failed::$(basename "$integration")" >&2
+      fi
+      echo "FAILED integration: $(basename "$integration")" >&2
+      exit 4
+    fi
+  done
+}
+
 main() {
   local mode="${1:-all}"
 
@@ -178,6 +200,7 @@ main() {
       prepare_connection
       run_fixtures_and_migrations
       run_verify_scripts
+      run_integration_scripts
       ;;
     bootstrap)
       prepare_connection
@@ -195,8 +218,12 @@ main() {
       prepare_connection
       run_sql_file "verify" "$2"
       ;;
+    integration)
+      prepare_connection
+      run_integration_scripts
+      ;;
     *)
-      echo "Unknown mode: $mode (expected all, bootstrap, verify, or verify-file)" >&2
+      echo "Unknown mode: $mode (expected all, bootstrap, verify, verify-file, or integration)" >&2
       exit 1
       ;;
   esac

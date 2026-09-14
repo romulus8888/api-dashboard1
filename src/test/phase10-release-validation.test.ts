@@ -111,7 +111,29 @@ describe("phase10 release validation", () => {
     expect(workflow).toMatch(/npm run lint/);
     expect(workflow).toMatch(/npm run build/);
     expect(workflow).toMatch(/validate-disposable-database\.sh/);
+    expect(workflow).toMatch(/validate-disposable-database\.sh integration/);
     expect(workflow).not.toMatch(/secrets:/);
+  });
+
+  it("ships two-connection disposable integration scripts with safety gates", () => {
+    const validationScript = readFileSync(VALIDATION_SCRIPT, "utf8");
+    const resetIntegration = readFileSync(
+      join(ROOT, "scripts/integration/phase9-reset-xact-lock.sh"),
+      "utf8",
+    );
+    const gucIntegration = readFileSync(
+      join(ROOT, "scripts/integration/phase1-transition-zero-row-guc.sh"),
+      "utf8",
+    );
+
+    expect(validationScript).toMatch(/run_integration_scripts/);
+    expect(resetIntegration).toMatch(/Two-connection disposable integration/i);
+    expect(resetIntegration).toMatch(/another reset is already in progress/i);
+    expect(gucIntegration).toMatch(/Two-connection disposable integration/i);
+    expect(gucIntegration).toMatch(/disappeared during update/i);
+    expect(gucIntegration).toMatch(/source GUC not restored after disappearance/i);
+    expect(gucIntegration).toMatch(/empty prior context/i);
+    expect(gucIntegration).not.toMatch(/supabase\.co|supabase\.com/i);
   });
 
   it("optionally scans built client bundles when .next/static exists", () => {

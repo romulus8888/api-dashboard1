@@ -265,12 +265,6 @@ begin
   v_result := public.reset_demo_data(v_operator_id);
   v_group_id := (v_result ->> 'demo_reset_group_id')::uuid;
 
-  if not pg_catalog.pg_try_advisory_lock(918273645) then
-    raise exception 'reset_demo_data must use transaction-scoped advisory locks, not session locks';
-  end if;
-
-  perform pg_catalog.pg_advisory_unlock(918273645);
-
   v_result := public.reset_demo_data(v_operator_id);
   v_second_group_id := (v_result ->> 'demo_reset_group_id')::uuid;
   v_inserted := (v_result ->> 'inserted_count')::integer;
