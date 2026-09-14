@@ -102,6 +102,8 @@ describe("phase10 release validation", () => {
     const workflow = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8");
 
     expect(workflow).toMatch(/permissions:\s*\n\s*contents: read/);
+    expect(workflow).toMatch(/node-version: 24\.15\.0/);
+    expect(workflow).toMatch(/DISPOSABLE_TEST_ACK: "yes"/);
     expect(workflow).toMatch(/postgres:16/);
     expect(workflow).toMatch(/npm ci/);
     expect(workflow).toMatch(/npm test/);

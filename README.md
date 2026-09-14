@@ -8,8 +8,9 @@
 > **Repository branch facts (verify before deployment claims):**
 > - This branch implements an **authenticated operator dashboard** with server-side
 >   admin APIs.
-> - **Vitest** automated tests exist in the repository.
-> - **CI is not configured** in this repository.
+> - **CI** runs Vitest, lint, production build, client bundle secret scan, and
+>   disposable PostgreSQL 16 migrations/verifications (`.github/workflows/ci.yml`).
+> - **Hosted Supabase, Vercel, n8n, Telegram, and browser E2E** remain manually verified.
 > - A public deployment may run a **different revision**; confirm the live revision
 >   before describing production behavior.
 
@@ -282,6 +283,8 @@ curl -i -X POST "http://localhost:3000/api/admin/demo/reset" \
 > B2B intake prototype: Next.js + Supabase with an authenticated operator
 > dashboard on this branch, plus optional **local** n8n workflows that poll leads,
 > perform atomic single-winner claims with versioned idempotency keys, and write a
-> technical audit trail. Vitest covers the app layer; CI is not configured.
-> Failure handling and Telegram alerts require manual n8n setup. Not
+> technical audit trail. CI runs Vitest, lint, build, bundle secret scan, and
+> disposable Postgres SQL validation; hosted Supabase, Vercel, n8n, Telegram,
+> and browser E2E remain manual. Failure handling and Telegram alerts require
+> manual n8n setup. Not
 > production-ready — synthetic test data only.

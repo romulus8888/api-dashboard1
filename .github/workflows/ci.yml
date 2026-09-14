@@ -25,7 +25,7 @@ jobs:
           --health-retries 5
 
     env:
-      DISPOSABLE_TEST_ACK: yes
+      DISPOSABLE_TEST_ACK: "yes"
       DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
       NEXT_PUBLIC_SUPABASE_ANON_KEY: disposable-test-anon-key
@@ -38,7 +38,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24.15.0
           cache: npm
 
       - name: Install dependencies
