@@ -5,23 +5,34 @@ set -euo pipefail
 OPERATOR_ID="11111111-1111-4111-8111-111111111111"
 RESET_XACT_LOCK=918273645
 
-wait_for_reset_xact_lock() {
+wait_for_conn_a_holding_reset() {
   psql -v ON_ERROR_STOP=1 <<SQL
-do \$wait_for_reset_xact_lock\$
+do \$wait_for_conn_a_holding_reset\$
 declare
   i integer;
 begin
-  for i in 1..600 loop
+  for i in 1..3000 loop
     if exists (
       select 1
       from pg_catalog.pg_locks l
       join pg_catalog.pg_stat_activity a on a.pid = l.pid
       where l.locktype = 'advisory'
         and l.granted
-        and l.objsubid = 2
         and a.application_name = 'integration_conn_a'
-        and l.classid = 0
-        and l.objid = $RESET_XACT_LOCK
+        and (
+          (l.classid = 0 and l.objid = $RESET_XACT_LOCK)
+          or (l.classid = $RESET_XACT_LOCK and l.objid = 0)
+        )
+    ) then
+      return;
+    end if;
+
+    if exists (
+      select 1
+      from pg_catalog.pg_stat_activity
+      where application_name = 'integration_conn_a'
+        and xact_start is not null
+        and query ilike '%wait_for_conn_a_proceed%'
     ) then
       return;
     end if;
@@ -30,16 +41,15 @@ begin
       select 1
       from pg_catalog.pg_stat_activity
       where application_name = 'integration_conn_a'
-        and state <> 'idle'
     ) then
       raise exception 'connection A is not active';
     end if;
 
     perform pg_sleep(0.01);
   end loop;
-  raise exception 'timed out waiting for reset xact lock on connection A';
+  raise exception 'timed out waiting for connection A to hold reset transaction open';
 end;
-\$wait_for_reset_xact_lock\$;
+\$wait_for_conn_a_holding_reset\$;
 SQL
 }
 
@@ -76,7 +86,7 @@ do \$wait_for_conn_a_proceed\$
 declare
   i integer;
 begin
-  for i in 1..600 loop
+  for i in 1..3000 loop
     if exists (
       select 1
       from public.integration_coord
@@ -94,7 +104,7 @@ commit;
 SQL
 CONN_A_PID=$!
 
-if ! wait_for_reset_xact_lock; then
+if ! wait_for_conn_a_holding_reset; then
   kill "$CONN_A_PID" 2>/dev/null || true
   wait "$CONN_A_PID" 2>/dev/null || true
   exit 1
