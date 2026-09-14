@@ -96,12 +96,12 @@ jobs:
           for migration in supabase/migrations/*.sql; do
             psql -v ON_ERROR_STOP=1 -f "$migration"
           done
-          psql -v ON_ERROR_STOP=1 -f supabase/verify/phase11_clean_install.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/verify/phase11_clean_install.sql || { echo "::error::verify failed phase11_clean_install.sql"; exit 3; }
           for verify in supabase/verify/*.sql; do
             if [[ "$(basename "$verify")" == "phase11_clean_install.sql" ]]; then
               continue
             fi
-            psql -v ON_ERROR_STOP=1 -f "$verify"
+            psql -v ON_ERROR_STOP=1 -f "$verify" || { echo "::error::verify failed $(basename "$verify")"; exit 3; }
           done
           for integration in scripts/integration/*.sh; do
             bash "$integration" || { echo "::error::integration $(basename "$integration") failed with exit $?"; exit 12; }
