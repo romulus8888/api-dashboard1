@@ -127,7 +127,7 @@ for verify in "$ROOT"/supabase/verify/*.sql; do
   if [[ "$(basename "$verify")" == "phase11_clean_install.sql" ]]; then
     continue
   fi
-  run_validate "clean verify $(basename "$verify")" 11 verify-file "$verify"
+  apply_sql_in_container postgres verify "$verify"
 done
 
 run_validate "clean track integration" 12 integration
@@ -152,10 +152,10 @@ for verify in "$ROOT"/supabase/verify/*.sql; do
     log "verify: skipping $(basename "$verify") (clean-install guard only)"
     continue
   fi
-  run_validate "legacy verify $(basename "$verify")" 11 verify-file "$verify"
+  apply_sql_in_container postgres_legacy verify "$verify"
 done
 for verify in "$ROOT"/supabase/legacy/verify/*.sql; do
-  run_validate "legacy verify $(basename "$verify")" 11 verify-file "$verify"
+  apply_sql_in_container postgres_legacy legacy-verify "$verify"
 done
 
 log "clean and legacy disposable validation passed"
