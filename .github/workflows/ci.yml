@@ -70,6 +70,10 @@ jobs:
           python scripts/normalize_shell_lf.py
           find scripts -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
           chmod +x scripts/*.sh scripts/integration/*.sh
+          if grep -r $'\r' scripts --include='*.sh'; then
+            echo "::error::CRLF line endings remain in shell scripts"
+            exit 1
+          fi
 
       - name: Disposable SQL migrations and verification
         run: |

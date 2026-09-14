@@ -128,19 +128,10 @@ disposable_psql() {
     return
   fi
 
+  local pg_env_helper
+  pg_env_helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/disposable-pg-env.mjs"
   unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
-  eval "$(node -e "
-    const u = new URL(process.env.DISPOSABLE_DATABASE_URL);
-    const esc = (value) => \"'\" + String(value).replace(/'/g, \"'\\''\") + \"'\";
-    const db = (u.pathname || '/postgres').replace(/^\\//, '') || 'postgres';
-    process.stdout.write(
-      'PGHOST=' + esc(u.hostname) + ' ' +
-      'PGPORT=' + esc(u.port || '5432') + ' ' +
-      'PGUSER=' + esc(decodeURIComponent(u.username)) + ' ' +
-      'PGPASSWORD=' + esc(decodeURIComponent(u.password)) + ' ' +
-      'PGDATABASE=' + esc(db)
-    );
-  ")"
+  eval "$(node "$pg_env_helper")"
   psql -v ON_ERROR_STOP=1 "$@"
 }
 
