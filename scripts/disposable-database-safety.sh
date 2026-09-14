@@ -91,8 +91,8 @@ disposable_psql() {
     exit 1
   fi
 
-  unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
-  PGSSLMODE=disable psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 "$@"
+  unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE PGSSLMODE
+  psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 "$@"
 }
 
 wait_for_disposable_postgres() {

@@ -26,7 +26,7 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       PGHOST: localhost
       PGPORT: 5432
       PGUSER: postgres
@@ -70,6 +70,7 @@ jobs:
           DISPOSABLE_VALIDATION_TRACK: clean
         run: |
           set -euxo pipefail
+          psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
           bash scripts/validate-disposable-database.sh bootstrap
           for verify in supabase/verify/*.sql; do
             bash scripts/validate-disposable-database.sh verify-file "$verify"
@@ -79,10 +80,10 @@ jobs:
       - name: Legacy disposable database validation
         env:
           DISPOSABLE_VALIDATION_TRACK: legacy
-          DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_legacy?sslmode=disable
+          DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_legacy
         run: |
           set -euxo pipefail
-          PGSSLMODE=disable psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
-          PGSSLMODE=disable psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
-          PGSSLMODE=disable psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
+          psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
+          psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
+          psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
           bash scripts/validate-disposable-database.sh all
