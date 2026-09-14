@@ -40,6 +40,8 @@ describe("disposable database safety gate", () => {
     expect(helper).toMatch(/DISPOSABLE_PSQL_MODE/);
     expect(helper).toMatch(/\"\$\{1:-\}\" == \"-f\"/);
     expect(helper).toMatch(/docker exec -i/);
+    expect(helper).toMatch(/DISPOSABLE_CI_HOST_WORKSPACE_ROOT/);
+    expect(helper).toMatch(/workspace_root\/\$rel/);
     expect(helper).toMatch(/unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE/);
     expect(helper).not.toMatch(/unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE PGSSLMODE/);
     expect(helper).toMatch(/wait_for_disposable_postgres/);

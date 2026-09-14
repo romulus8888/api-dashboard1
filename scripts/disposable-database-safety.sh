@@ -106,10 +106,22 @@ disposable_psql() {
   if [[ "${DISPOSABLE_PSQL_MODE:-}" == "docker-exec" ]]; then
     local container="${DISPOSABLE_CI_CONTAINER_NAME:-disposable-postgres}"
     local workspace_root="${DISPOSABLE_CI_WORKSPACE_ROOT:-/workspace}"
+    local host_root="${DISPOSABLE_CI_HOST_WORKSPACE_ROOT:-}"
     local database
     database="$(disposable_resolve_database_name)"
     if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
-      docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 < "$2"
+      local file="$2"
+      if [[ -n "$host_root" ]]; then
+        case "$file" in
+          "$host_root"/*)
+            local rel="${file#$host_root/}"
+            docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 \
+              -f "$workspace_root/$rel"
+            return
+            ;;
+        esac
+      fi
+      docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 < "$file"
       return
     fi
     docker exec -i "$container" psql -U postgres -d "$database" -v ON_ERROR_STOP=1 "$@"

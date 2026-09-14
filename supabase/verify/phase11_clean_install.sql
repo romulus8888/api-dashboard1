@@ -1,5 +1,5 @@
--- Phase 11: clean-install guard — active migrations must not create legacy jobs objects.
--- Rollback-safe: entire script runs inside BEGIN … ROLLBACK.
+-- Phase 11: clean-install guard - active migrations must not create legacy jobs objects.
+-- Rollback-safe: entire script runs inside BEGIN ... ROLLBACK.
 
 begin;
 

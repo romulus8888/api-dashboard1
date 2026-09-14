@@ -108,7 +108,7 @@ export DISPOSABLE_TEST_ACK=yes
 export DISPOSABLE_DATABASE_URL="$BASE_URL"
 export DISPOSABLE_PSQL_MODE=docker-exec
 export DISPOSABLE_CI_CONTAINER_NAME="$CONTAINER_NAME"
-export DISPOSABLE_CI_WORKSPACE_ROOT="$ROOT"
+export DISPOSABLE_CI_HOST_WORKSPACE_ROOT="$ROOT"
 
 export DISPOSABLE_VALIDATION_TRACK=clean
 log "clean track bootstrap"
@@ -118,9 +118,16 @@ log "clean track schema probe"
 docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
   -c "select to_regclass('public.jobs') as jobs, to_regclass('public.job_processing_audit') as job_audit"
 
+log "clean track clean-install guard"
+run_validate "clean verify phase11_clean_install.sql" 11 verify-file \
+  "$ROOT/supabase/verify/phase11_clean_install.sql"
+
 log "clean track verify"
 shopt -s nullglob
 for verify in "$ROOT"/supabase/verify/*.sql; do
+  if [[ "$(basename "$verify")" == "phase11_clean_install.sql" ]]; then
+    continue
+  fi
   run_validate "clean verify $(basename "$verify")" 11 verify-file "$verify"
 done
 

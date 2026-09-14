@@ -108,10 +108,17 @@ run_verify_scripts() {
     exit 1
   fi
 
+  local clean_guard="$ACTIVE_VERIFY_DIR/phase11_clean_install.sql"
+  if [[ "$TRACK" == "clean" && -f "$clean_guard" ]]; then
+    run_sql_file "verify" "$clean_guard"
+  fi
+
   local verify
   for verify in "${verify_scripts[@]}"; do
-    if [[ "$TRACK" == "legacy" && "$(basename "$verify")" == "phase11_clean_install.sql" ]]; then
-      echo "==> [$TRACK] verify: skipping $(basename "$verify") (clean-install guard only)"
+    if [[ "$(basename "$verify")" == "phase11_clean_install.sql" ]]; then
+      if [[ "$TRACK" == "legacy" ]]; then
+        echo "==> [$TRACK] verify: skipping $(basename "$verify") (clean-install guard only)"
+      fi
       continue
     fi
     run_sql_file "verify" "$verify"
