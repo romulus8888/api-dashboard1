@@ -130,7 +130,19 @@ for verify in "$ROOT"/supabase/verify/*.sql; do
   apply_sql_in_container postgres verify "$verify"
 done
 
-run_validate "clean track integration" 12 integration
+if ! command -v psql >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update && apt-get install -y postgresql-client
+  else
+    fail 12 "psql is required for integration tests"
+  fi
+fi
+
+export PGSSLMODE=disable
+(
+  unset DISPOSABLE_PSQL_MODE
+  run_validate "clean track integration" 12 integration
+)
 
 log "preparing legacy database"
 docker exec -i "$CONTAINER_NAME" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
