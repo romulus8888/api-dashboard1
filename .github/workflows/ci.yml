@@ -83,6 +83,11 @@ jobs:
             sleep 1
           done
           psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
+          psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'select 1 as disposable_url_ready'
+          # shellcheck disable=SC1091
+          source scripts/disposable-database-safety.sh
+          require_disposable_database_target
+          disposable_psql -c 'select 1 as disposable_helper_ready'
           export DISPOSABLE_VALIDATION_TRACK=clean
           bash scripts/validate-disposable-database.sh bootstrap
           bash scripts/validate-disposable-database.sh verify
