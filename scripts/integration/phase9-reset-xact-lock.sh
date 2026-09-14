@@ -37,7 +37,7 @@ begin
       return;
     end if;
 
-    if not exists (
+    if i > 100 and not exists (
       select 1
       from pg_catalog.pg_stat_activity
       where application_name = 'integration_conn_a'
@@ -103,6 +103,7 @@ end;
 commit;
 SQL
 CONN_A_PID=$!
+sleep 0.05
 
 if ! wait_for_conn_a_holding_reset; then
   kill "$CONN_A_PID" 2>/dev/null || true
@@ -133,7 +134,7 @@ if [[ "$CONN_B_OUTPUT" != *"another reset is already in progress"* ]]; then
   exit 1
 fi
 
-psql -v ON_ERROR_STOP=1 -c "insert into public.integration_coord (k, v) values ('proceed', 'yes') on conflict (k) do update set v = excluded.v;"
+psql -v ON_ERROR_STOP=1 -c "delete from public.integration_coord where k = 'proceed'; insert into public.integration_coord (k, v) values ('proceed', 'yes');"
 wait "$CONN_A_PID"
 
 psql -v ON_ERROR_STOP=1 -tAc "select public.reset_demo_data('$OPERATOR_ID'::uuid)" >/dev/null

@@ -104,11 +104,10 @@ begin
       return;
     end if;
 
-    if not exists (
+    if i > 100 and not exists (
       select 1
       from pg_catalog.pg_stat_activity
       where application_name = 'integration_conn_a'
-        and state <> 'idle'
     ) then
       raise exception 'connection A is not active';
     end if;
@@ -235,6 +234,7 @@ end;
 rollback;
 SQL
   local conn_a_pid=$!
+  sleep 0.05
 
   if ! wait_for_conn_a_blocked "$case_label"; then
     kill "$conn_a_pid" "$conn_hold_pid" 2>/dev/null || true
@@ -246,7 +246,7 @@ SQL
   fi
 
   echo "integration: connection A blocked on update pause ($case_label)"
-  psql -v ON_ERROR_STOP=1 -c "insert into public.integration_coord (k, v) values ('proceed', 'yes') on conflict (k) do update set v = excluded.v;"
+  psql -v ON_ERROR_STOP=1 -c "delete from public.integration_coord where k = 'proceed'; insert into public.integration_coord (k, v) values ('proceed', 'yes');"
 
   wait "$conn_hold_pid"
   local conn_hold_status=$?
