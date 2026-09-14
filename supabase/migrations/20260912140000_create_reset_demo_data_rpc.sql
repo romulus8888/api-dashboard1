@@ -24,10 +24,11 @@ begin
 
   perform public.validate_active_operator_assignment(p_operator_id);
 
-  if not pg_catalog.pg_try_advisory_xact_lock(918273645) then
+  if not pg_catalog.pg_try_advisory_lock(918273645) then
     raise exception 'reset_demo_data: another reset is already in progress';
   end if;
 
+  begin
   with deleted as (
     delete from public.leads
     where is_synthetic = true
@@ -238,6 +239,13 @@ begin
     v_lead_id, 'in_progress'::public.lead_status, 'demo_reset', p_operator_id
   );
   v_inserted_count := v_inserted_count + 1;
+  exception
+    when others then
+      perform pg_catalog.pg_advisory_unlock(918273645);
+      raise;
+  end;
+
+  perform pg_catalog.pg_advisory_unlock(918273645);
 
   return jsonb_build_object(
     'demo_reset_group_id', v_group_id,
