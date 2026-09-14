@@ -11,24 +11,11 @@ jobs:
   validate:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
-      PGHOST: 127.0.0.1
-      PGPORT: 5433
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PGHOST: localhost
+      PGPORT: 5432
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: postgres
@@ -63,17 +50,26 @@ jobs:
         run: bash scripts/scan-client-bundle-secrets.sh
 
       - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Disposable SQL migrations and verification
         run: |
           set -euxo pipefail
-          for attempt in $(seq 1 30); do
+          cleanup_disposable_postgres() {
+            docker rm -f disposable-postgres >/dev/null 2>&1 || true
+          }
+          trap cleanup_disposable_postgres EXIT
+          cleanup_disposable_postgres
+          docker run -d --name disposable-postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -p 5432:5432 \
+            postgres:16
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
             if psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready' >/dev/null 2>&1; then
               break
             fi
             if [ "$attempt" -eq 30 ]; then
-              echo "PostgreSQL service is not ready" >&2
+              echo "PostgreSQL container is not ready" >&2
               exit 2
             fi
             sleep 1
@@ -88,5 +84,5 @@ jobs:
           psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
           psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
           export DISPOSABLE_VALIDATION_TRACK=legacy
-          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/postgres_legacy
+          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
           bash scripts/validate-disposable-database.sh all
