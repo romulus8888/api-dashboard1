@@ -2,39 +2,65 @@
 
 This document covers **hosted Supabase + Vercel + optional local n8n** rollout. It is **not** physically atomic across providers.
 
-**CI/disposable verification** (GitHub Actions + `scripts/validate-disposable-database.sh`) proves migrations and `supabase/verify/*.sql` on **PostgreSQL 16 with fixture stubs only**. It does **not** deploy to hosted Supabase, configure Vercel secrets, or exercise Turnstile, Telegram, or n8n. Treat CI green as a prerequisite, not a substitute for hosted smoke tests below.
+**CI/disposable verification** (GitHub Actions + `scripts/validate-disposable-database.sh`) proves migrations and `supabase/verify/*.sql` on **PostgreSQL 16** using two **isolated** database tracks:
+
+- **Clean track** — fresh demo install (no `public.jobs`)
+- **Legacy track** — separate database with legacy jobs fixtures + `supabase/legacy/` SQL
+
+CI does **not** deploy to hosted Supabase, configure Vercel secrets, or exercise Turnstile, Telegram, or n8n. Treat CI green as a prerequisite, not a substitute for hosted smoke tests below.
 
 ## A. Before you start (hosted)
 
-1. **Export / back up production `public.jobs` schema and data** if legacy jobs still exist. The repository does not ship the real production jobs baseline; disposable CI uses a minimal stub in `supabase/fixtures/disposable-test-prerequisites.sql` only.
+1. Decide which path applies:
+   - **New dedicated demo Supabase project** — apply **only** `supabase/migrations/` (clean install). Do **not** apply `supabase/fixtures/` or anything under `supabase/legacy/`.
+   - **Existing project with `public.jobs`** — follow the legacy upgrade path in `supabase/legacy/README.md` after backing up jobs data.
 2. Confirm the target Supabase project and Vercel project. Store credentials in your team secret manager — never commit them.
 3. Run disposable validation locally or wait for CI on the release branch:
 
 ```bash
 export DISPOSABLE_TEST_ACK=yes
 export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
-bash scripts/validate-disposable-database.sh
+bash scripts/validate-disposable-database.sh clean all
 ```
 
-## B. Hosted database — apply additive migrations first
+Legacy upgrade validation (separate database — do not reuse the clean DB):
+
+```bash
+createdb postgres_legacy
+export DISPOSABLE_VALIDATION_TRACK=legacy
+export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
+bash scripts/validate-disposable-database.sh legacy all
+```
+
+## B. Hosted database — clean demo project (active migrations only)
 
 Apply **in timestamp order** from `supabase/migrations/`:
 
-1. `20260814000000_create_job_processing_audit.sql` (requires real `public.jobs` on hosted — export baseline first if missing)
-2. `20260910120000_create_lead_schema_and_status_history.sql`
-3. `20260910140000_create_demo_rate_limit.sql`
-4. `20260911140000_atomic_lost_reason_in_transition.sql`
-5. `20260911180000_create_lead_metrics_rpc.sql`
-6. `20260911200000_create_lead_automation_rpcs.sql`
-7. `20260912140000_create_reset_demo_data_rpc.sql`
+1. `20260910120000_create_lead_schema_and_status_history.sql`
+2. `20260910140000_create_demo_rate_limit.sql`
+3. `20260911140000_atomic_lost_reason_in_transition.sql`
+4. `20260911180000_create_lead_metrics_rpc.sql`
+5. `20260911200000_create_lead_automation_rpcs.sql`
+6. `20260912140000_create_reset_demo_data_rpc.sql`
 
 **Do not** apply `supabase/fixtures/disposable-test-prerequisites.sql` to hosted Supabase.
 
-**Do not** apply `20260910180000_lockdown_legacy_jobs.sql` until step F passes.
+**Do not** apply `supabase/legacy/` SQL to a clean demo project.
 
 Optional hosted SQL checks (manual, on staging or after deploy):
 
-- `supabase/verify/phase1_lead_schema.sql` through `phase9_demo_reset.sql` as appropriate for the migrations applied (rollback-safe scripts; run in SQL editor on a disposable clone when possible).
+- `supabase/verify/phase1_lead_schema.sql` through `phase11_clean_install.sql` (rollback-safe scripts; run on a disposable clone when possible).
+
+## B2. Hosted database — legacy upgrade (existing `public.jobs`)
+
+See `supabase/legacy/README.md`. Summary:
+
+1. Ensure `public.jobs` exists (export/back up first).
+2. Apply `supabase/legacy/migrations/20260814000000_create_job_processing_audit.sql` if audit is missing.
+3. Apply active lead migrations from `supabase/migrations/`.
+4. Deploy dashboard and verify operators (section E).
+5. Apply `supabase/legacy/migrations/20260910180000_lockdown_legacy_jobs.sql` only after E passes.
+6. Run `supabase/legacy/verify/phase5_jobs_lockdown.sql` on a disposable clone when possible.
 
 ## C. Auth and operators (hosted Supabase)
 
@@ -79,19 +105,29 @@ CI uses placeholder values only; do not copy CI env vars to production.
 6. Sign out; confirm unauthenticated dashboard access redirects to login
 7. Optional: run synthetic demo reset from the dashboard (replaces `is_synthetic=true` leads only)
 
-## F. Legacy jobs lockdown (only after E passes)
+## F. Legacy jobs lockdown (legacy upgrade path only; after E passes)
 
 Apply:
 
-- `20260910180000_lockdown_legacy_jobs.sql`
+- `supabase/legacy/migrations/20260910180000_lockdown_legacy_jobs.sql`
 
 Then verify:
 
 ```sql
--- supabase/verify/phase5_jobs_lockdown.sql (rollback-safe)
+-- supabase/legacy/verify/phase5_jobs_lockdown.sql (rollback-safe)
 ```
 
 Confirm the dashboard still works via admin APIs (no browser `jobs` access).
+
+Skip this section entirely on a **clean demo project** that never had `public.jobs`.
+
+## F2. Decommission or revoke the old Supabase project
+
+After the new Vercel deployment is verified against the **dedicated demo** Supabase project:
+
+1. Rotate or revoke API keys on the **old** Supabase project so stale browser bundles cannot keep using its URL/anon key.
+2. Prefer full decommission if the old project is retired.
+3. Old public JS bundles may retain embedded `NEXT_PUBLIC_*` values until users hard-refresh; treat key rotation as mandatory, not optional.
 
 ## G. n8n (local / optional automation)
 
@@ -127,8 +163,10 @@ After E–G as applicable:
 
 | Check | CI (disposable Postgres 16) | Hosted verification |
 | --- | --- | --- |
-| Migration chain | Yes | Apply same files to Supabase |
-| `supabase/verify/*.sql` | Yes | Run on staging clone when possible |
+| Clean migration chain (no jobs) | Yes (isolated DB) | Apply `supabase/migrations/` only |
+| Legacy upgrade chain | Yes (separate DB) | Follow `supabase/legacy/README.md` |
+| `supabase/verify/*.sql` | Yes (clean track) | Run on staging clone when possible |
+| `supabase/legacy/verify/*.sql` | Yes (legacy track) | After lockdown on legacy installs |
 | Next.js build + unit tests | Yes | Vercel deploy |
 | Operator login + dashboard | No | Section E |
 | Turnstile / demo intake | No | Section H |

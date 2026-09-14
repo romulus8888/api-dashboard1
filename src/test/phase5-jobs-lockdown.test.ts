@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 describe("phase5 jobs lockdown migration", () => {
   it("enables RLS and revokes browser roles from public.jobs", () => {
     const sql = readFileSync(
-      join(process.cwd(), "supabase/migrations/20260910180000_lockdown_legacy_jobs.sql"),
+      join(process.cwd(), "supabase/legacy/migrations/20260910180000_lockdown_legacy_jobs.sql"),
       "utf8",
     );
 
@@ -18,7 +18,7 @@ describe("phase5 jobs lockdown migration", () => {
 
   it("includes static privilege verification", () => {
     const verifySql = readFileSync(
-      join(process.cwd(), "supabase/verify/phase5_jobs_lockdown.sql"),
+      join(process.cwd(), "supabase/legacy/verify/phase5_jobs_lockdown.sql"),
       "utf8",
     );
 

@@ -1,37 +1,33 @@
 # Disposable test fixtures (local / CI only)
 
-These files exist so Phase 1 migrations and verification can run on an **isolated PostgreSQL instance** without hosted Supabase or a production `public.jobs` export.
+These files exist so active lead/demo migrations and verification can run on an
+**isolated PostgreSQL instance** without hosted Supabase.
 
 **Never apply to hosted Supabase or production.**
 
-## Why this exists
+## Clean install track
 
-- `20260814000000_create_job_processing_audit.sql` requires `public.jobs`, but the repository does not yet contain a production jobs baseline migration.
-- Phase 1 references `auth.users` for operators. A disposable database needs minimal Auth stubs.
-
-The complete production migration chain is **not** reproducible from this repository until the real `public.jobs` DDL is exported.
-
-## Apply order (fresh disposable database)
-
-Prefer the automated chain (CI and local):
+`disposable-test-prerequisites.sql` provides Supabase-compatible roles and
+minimal Auth stubs. It does **not** create `public.jobs`.
 
 ```bash
 export DISPOSABLE_TEST_ACK=yes
 export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
-bash scripts/validate-disposable-database.sh
+bash scripts/validate-disposable-database.sh clean all
 ```
 
-Manual equivalent (not recommended):
+## Legacy compatibility track
+
+Legacy jobs stubs and migrations live under `supabase/legacy/`. Validate on a
+**separate database** so the clean track is not contaminated:
 
 ```bash
-psql "$DISPOSABLE_DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f supabase/fixtures/disposable-test-prerequisites.sql \
-  -f supabase/migrations/20260814000000_create_job_processing_audit.sql \
-  -f supabase/migrations/20260910120000_create_lead_schema_and_status_history.sql \
-  -f supabase/verify/phase1_lead_schema.sql
+export DISPOSABLE_TEST_ACK=yes
+createdb postgres_legacy
+export DISPOSABLE_VALIDATION_TRACK=legacy
+export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
+bash scripts/validate-disposable-database.sh legacy all
 ```
-
-**These files are not migrations.** They live outside `supabase/migrations/` and must never be applied to hosted Supabase.
 
 ## Trust boundary (actor attribution)
 

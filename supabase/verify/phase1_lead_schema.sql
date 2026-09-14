@@ -3,9 +3,8 @@
 --
 -- Rollback-safe: entire script runs inside BEGIN … ROLLBACK.
 --
--- Prerequisite (disposable local/CI database only):
+-- Prerequisite (disposable local/CI database only — clean track):
 --   supabase/fixtures/disposable-test-prerequisites.sql
---   supabase/migrations/20260814000000_create_job_processing_audit.sql
 --   supabase/migrations/20260910120000_create_lead_schema_and_status_history.sql
 -- ============================================================================
 

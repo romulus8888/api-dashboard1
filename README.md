@@ -111,7 +111,9 @@ src/
   hooks/          Data-loading hooks
   types/          Job types, statuses, priorities
 supabase/
-  migrations/     SQL migration: audit table, constraints, RLS, claim RPC
+  migrations/     Active lead/demo SQL migrations (clean install — no public.jobs)
+  legacy/         Archived jobs/audit SQL for existing installations only
+  fixtures/       Disposable CI stubs (never apply to hosted Supabase)
 automation/
   docker-compose.yml   Local n8n + PostgreSQL
   .env.example         Environment template, no real secrets
@@ -139,10 +141,24 @@ variables in `.env.local`.
 
 ### Database
 
-Apply `supabase/migrations/20260814000000_create_job_processing_audit.sql`
-through the Supabase SQL Editor or `supabase db push`. It creates the audit
-table and the claim RPC and does not modify the existing `jobs` table.
-Background and manual verification queries: `docs/supabase-processing-audit.md`.
+**New dedicated demo Supabase project:** apply only `supabase/migrations/` in
+timestamp order. Do **not** apply `supabase/fixtures/` or `supabase/legacy/` to
+hosted Supabase.
+
+**Existing project with `public.jobs`:** follow `supabase/legacy/README.md` for
+the separately documented upgrade path (audit + lockdown after dashboard cutover).
+
+Disposable validation (local/CI):
+
+```bash
+export DISPOSABLE_TEST_ACK=yes
+export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
+bash scripts/validate-disposable-database.sh clean all
+```
+
+After deploying to a new Vercel project + demo Supabase, **revoke or decommission
+the old Supabase project** — stale public bundles may still contain its URL/key.
+See `docs/deployment-runbook.md`.
 
 ### Automation
 
@@ -185,13 +201,13 @@ Then import the two workflows and connect credentials:
 | --- | --- | --- |
 | Next.js intake form + authenticated dashboard | Yes (local; public deploy revision may differ) | Hosted n8n / public webhook |
 | Legacy browser → Supabase `jobs` CRUD (anon key) | Locked down in migrations | Remove legacy table |
-| Audit table + claim RPC (SQL migration) | In repo; apply manually | Baseline `jobs` migration in repo |
+| Audit table + claim RPC (legacy SQL) | Under `supabase/legacy/` | Clean demo installs skip jobs entirely |
 | n8n lead intake workflow JSON | Yes; **inactive** after import | Hosted n8n / public webhook |
 | n8n lead error workflow + Telegram JSON | Yes; **inactive**; Error Workflow assigned manually | — |
 | Manual automation retry (dashboard API + RPC) | Yes | Automatic retry |
 | Synthetic demo reset (dashboard API + RPC) | Yes | Scheduled reset |
 | Automated tests (Vitest) | Yes | — |
-| CI pipeline (Vitest + disposable Postgres 16 SQL) | Yes | Hosted Supabase staging checks |
+| CI pipeline (Vitest + clean + legacy disposable Postgres 16 SQL) | Yes | Hosted Supabase staging checks |
 | Public webhook / Kafka | No | Future iteration |
 
 ## Current limitations

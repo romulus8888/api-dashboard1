@@ -1,20 +1,18 @@
 -- ============================================================================
--- LOCAL / CI ONLY — disposable test database prerequisites
+-- LOCAL / CI ONLY — disposable test database prerequisites (clean install)
 --
 -- Never apply to hosted Supabase or production.
 --
--- Provides minimal stubs so migrations and Phase 1 verification can run on an
--- isolated PostgreSQL instance without the full Supabase Auth stack or an
--- exported production jobs baseline.
+-- Provides Supabase-compatible roles and minimal Auth stubs so active lead/demo
+-- migrations and verification can run on an isolated PostgreSQL instance.
 --
--- Apply order (fresh disposable database):
+-- Apply order (fresh disposable database — clean track):
 --   1. this file
---   2. supabase/migrations/20260814000000_create_job_processing_audit.sql
---   3. supabase/migrations/20260910120000_create_lead_schema_and_status_history.sql
---   4. supabase/verify/phase1_lead_schema.sql
+--   2. supabase/migrations/*.sql (active lead/demo migrations only)
+--   3. supabase/verify/*.sql
 --
--- The production migration chain is NOT fully reproducible until a real
--- public.jobs baseline is exported from production.
+-- Legacy jobs/audit objects live under supabase/legacy/ and are validated on a
+-- separate disposable database track. They must not be applied to clean installs.
 -- ============================================================================
 
 create extension if not exists pgcrypto;
@@ -71,12 +69,3 @@ revoke all on function auth.uid() from public;
 revoke all on function auth.role() from public;
 grant execute on function auth.uid() to anon, authenticated, service_role;
 grant execute on function auth.role() to anon, authenticated, service_role;
-
--- Minimal legacy jobs table (local/CI stub only; not production semantics)
-create table if not exists public.jobs (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now()
-);
-
-comment on table public.jobs is
-  'LOCAL/CI STUB ONLY. Disposable-test prerequisite; not the production jobs schema.';

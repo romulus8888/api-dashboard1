@@ -44,6 +44,8 @@ describe("phase10 release validation", () => {
     expect(script).toMatch(/disposable-test-prerequisites\.sql/);
     expect(script).toMatch(/supabase\/migrations/);
     expect(script).toMatch(/supabase\/verify/);
+    expect(script).toMatch(/DISPOSABLE_VALIDATION_TRACK/);
+    expect(script).toMatch(/supabase\/legacy\/migrations/);
     expect(safetyScript).toMatch(/supabase\.co|supabase\.com/i);
     expect(script).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
   });
@@ -68,14 +70,16 @@ describe("phase10 release validation", () => {
       .filter((name) => name.endsWith(".sql"))
       .sort();
 
-    expect(verifyFiles).toEqual([
-      "phase1_lead_schema.sql",
-      "phase2_demo_rate_limit.sql",
-      "phase5_jobs_lockdown.sql",
-      "phase7_lead_metrics.sql",
-      "phase8_lead_automation.sql",
-      "phase9_demo_reset.sql",
-    ]);
+    expect(verifyFiles).toEqual(
+      [
+        "phase1_lead_schema.sql",
+        "phase2_demo_rate_limit.sql",
+        "phase7_lead_metrics.sql",
+        "phase8_lead_automation.sql",
+        "phase9_demo_reset.sql",
+        "phase11_clean_install.sql",
+      ].sort(),
+    );
   });
 
   it("does not reference service_role secrets in use client modules", () => {
@@ -114,7 +118,10 @@ describe("phase10 release validation", () => {
     expect(workflow).toMatch(/npm run lint/);
     expect(workflow).toMatch(/npm run build/);
     expect(workflow).toMatch(/validate-disposable-database\.sh/);
-    expect(workflow).toMatch(/validate-disposable-database\.sh integration/);
+    expect(workflow).toMatch(/validate-disposable-database\.sh clean bootstrap/);
+    expect(workflow).toMatch(/validate-disposable-database\.sh clean integration/);
+    expect(workflow).toMatch(/validate-disposable-database\.sh legacy all/);
+    expect(workflow).toMatch(/postgres_legacy/);
     expect(workflow).not.toMatch(/secrets:/);
   });
 

@@ -65,12 +65,23 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Disposable SQL migrations and verification
+      - name: Clean disposable database validation
         run: |
           set -euxo pipefail
           psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
-          bash scripts/validate-disposable-database.sh bootstrap
+          bash scripts/validate-disposable-database.sh clean bootstrap
           for verify in supabase/verify/*.sql; do
-            bash scripts/validate-disposable-database.sh verify-file "$verify"
+            bash scripts/validate-disposable-database.sh clean verify-file "$verify"
           done
-          bash scripts/validate-disposable-database.sh integration
+          bash scripts/validate-disposable-database.sh clean integration
+
+      - name: Legacy disposable database validation
+        env:
+          DISPOSABLE_VALIDATION_TRACK: legacy
+          DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_legacy
+        run: |
+          set -euxo pipefail
+          psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
+          psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
+          psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy'
+          bash scripts/validate-disposable-database.sh legacy all
