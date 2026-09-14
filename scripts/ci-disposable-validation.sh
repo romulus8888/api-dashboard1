@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LEGACY_URL="postgresql://postgres:postgres@localhost:5432/postgres_legacy"
+LEGACY_URL="${DISPOSABLE_CI_LEGACY_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:5433/postgres_legacy}"
 PG_IMAGE="${DISPOSABLE_CI_POSTGRES_IMAGE:-postgres:16}"
 
 export DISPOSABLE_TEST_ACK=yes
