@@ -26,8 +26,8 @@ jobs:
 
     env:
       DISPOSABLE_TEST_ACK: "yes"
-      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      PGHOST: localhost
+      DISPOSABLE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      PGHOST: postgres
       PGPORT: 5432
       PGUSER: postgres
       PGPASSWORD: postgres

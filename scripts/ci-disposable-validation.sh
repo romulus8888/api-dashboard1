@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PG_IMAGE="${DISPOSABLE_CI_POSTGRES_IMAGE:-postgres:16}"
 PG_PASSWORD="${DISPOSABLE_CI_POSTGRES_PASSWORD:-postgres}"
-LEGACY_URL="postgresql://postgres:${PG_PASSWORD}@localhost:5432/postgres_legacy"
+LEGACY_URL="${DISPOSABLE_LEGACY_DATABASE_URL:-postgresql://postgres:${PG_PASSWORD}@postgres:5432/postgres_legacy}"
 
 log() {
   echo "==> [ci-disposable] $*"
