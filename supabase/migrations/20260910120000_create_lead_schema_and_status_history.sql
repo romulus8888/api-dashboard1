@@ -594,13 +594,13 @@ declare
 begin
   begin
     v_change_source := pg_catalog.coalesce(
-      pg_catalog.nullif(pg_catalog.current_setting('lead.status_change_source', true), ''::text),
+      nullif(pg_catalog.current_setting('lead.status_change_source', true), ''::text),
       'sql'
     );
 
-    v_reason := pg_catalog.nullif(pg_catalog.current_setting('lead.status_change_reason', true), ''::text);
+    v_reason := nullif(pg_catalog.current_setting('lead.status_change_reason', true), ''::text);
 
-    v_changed_by_raw := pg_catalog.nullif(pg_catalog.current_setting('lead.status_changed_by', true), ''::text);
+    v_changed_by_raw := nullif(pg_catalog.current_setting('lead.status_changed_by', true), ''::text);
     if v_changed_by_raw is not null then
       v_changed_by := v_changed_by_raw::uuid;
       perform public.validate_lead_status_actor(v_changed_by);
