@@ -11,6 +11,52 @@ const VALIDATION_SCRIPT = join(ROOT, "scripts/validate-disposable-database.sh");
 const BUNDLE_SCAN_SCRIPT = join(ROOT, "scripts/scan-client-bundle-secrets.sh");
 const SRC_DIR = join(ROOT, "src");
 
+type WorkflowStep = { name: string; run: string | null };
+
+function parseValidateJobSteps(workflow: string): WorkflowStep[] {
+  const stepsMatch = workflow.match(/^  validate:\n[\s\S]*?^    steps:\n([\s\S]*)/m);
+  if (!stepsMatch) return [];
+
+  const stepsBlock = stepsMatch[1] ?? "";
+  const chunks = stepsBlock.split(/\n(?=      - name:)/);
+  const steps: WorkflowStep[] = [];
+
+  for (const chunk of chunks) {
+    const trimmed = chunk.trim();
+    if (!trimmed) continue;
+
+    const nameMatch = trimmed.match(/^- name: (.+)$/m);
+    if (!nameMatch) continue;
+
+    const name = nameMatch[1].trim();
+    const scalarRun = trimmed.match(/^        run: ([^|>].+)$/m);
+    if (scalarRun) {
+      steps.push({ name, run: scalarRun[1].trim() });
+      continue;
+    }
+
+    const blockRun = trimmed.match(/^        run: \|?\n((?:          .*\n?)*)/m);
+    if (blockRun) {
+      const body = blockRun[1].replace(/^          /gm, "").replace(/\s+$/, "");
+      steps.push({ name, run: body });
+      continue;
+    }
+
+    if (/^        run:/m.test(trimmed)) {
+      steps.push({ name, run: "" });
+      continue;
+    }
+
+    steps.push({ name, run: null });
+  }
+
+  return steps;
+}
+
+function collectRunCommands(steps: WorkflowStep[]): string {
+  return steps.filter((step) => step.run).map((step) => step.run!).join("\n");
+}
+
 function collectClientSourceFiles(directory: string): string[] {
   const entries = readdirSync(directory, { withFileTypes: true });
   const files: string[] = [];
@@ -108,22 +154,43 @@ describe("phase10 release validation", () => {
 
   it("documents CI workflow with PostgreSQL 16 and disposable SQL validation", () => {
     const workflow = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+    const steps = parseValidateJobSteps(workflow);
+    const runCommands = collectRunCommands(steps);
 
     expect(workflow).toMatch(/permissions:\s*\n\s*contents: read/);
     expect(workflow).toMatch(/node-version: 24\.15\.0/);
     expect(workflow).toMatch(/DISPOSABLE_TEST_ACK: "yes"/);
-    expect(workflow).toMatch(/npm ci/);
-    expect(workflow).toMatch(/npm test/);
-    expect(workflow).toMatch(/npm run lint/);
-    expect(workflow).toMatch(/npm run build/);
-    expect(workflow).toMatch(/ci-disposable-validation\.sh/);
+    expect(workflow).toMatch(
+      /DISPOSABLE_DATABASE_URL: postgresql:\/\/postgres:postgres@localhost:5432\/postgres/,
+    );
+    expect(workflow).not.toMatch(/continue-on-error:/i);
+    expect(workflow).not.toMatch(/secrets:/);
+
+    const disposableStep = steps.find(
+      (step) => step.name === "Disposable SQL migrations and verification",
+    );
+    expect(disposableStep?.run).toBe("bash scripts/ci-disposable-validation.sh");
+
+    const wrapperInvocations = runCommands.match(/bash scripts\/ci-disposable-validation\.sh/g);
+    expect(wrapperInvocations).toHaveLength(1);
+
+    expect(runCommands).not.toMatch(/psql\s+.*-f\s+supabase\/migrations\//);
+    expect(runCommands).not.toMatch(/psql\s+.*-f\s+supabase\/fixtures\//);
+    expect(runCommands).not.toMatch(/psql\s+.*-f\s+supabase\/verify\//);
+    expect(runCommands).not.toMatch(/psql\s+.*-f\s+supabase\/legacy\//);
+
+    const syntaxStep = steps.find((step) => step.name === "Syntax-check shell scripts");
+    expect(syntaxStep?.run).toMatch(/bash -n/);
+    expect(syntaxStep?.run).toMatch(/find scripts -name '\*\.sh'/);
+
     const ciDisposable = readFileSync(join(ROOT, "scripts/ci-disposable-validation.sh"), "utf8");
     expect(ciDisposable).toMatch(/postgres:16/);
     expect(ciDisposable).toMatch(/DISPOSABLE_VALIDATION_TRACK=clean/);
     expect(ciDisposable).toMatch(/DISPOSABLE_VALIDATION_TRACK=legacy/);
     expect(ciDisposable).toMatch(/postgres_legacy/);
     expect(ciDisposable).toMatch(/validate-disposable-database\.sh/);
-    expect(workflow).not.toMatch(/secrets:/);
+    expect(ciDisposable).toMatch(/prepare_disposable_database_connection/);
+    expect(ciDisposable).toMatch(/disposable_psql/);
   });
 
   it("ships two-connection disposable integration scripts with safety gates", () => {

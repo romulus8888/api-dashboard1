@@ -76,55 +76,11 @@ jobs:
             exit 1
           fi
 
-      - name: Disposable SQL migrations and verification
+      - name: Syntax-check shell scripts
         run: |
-          # scripts/ci-disposable-validation.sh
-          set -euxo pipefail
-          for attempt in $(seq 1 60); do
-            if psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready' >/dev/null 2>&1; then
-              break
-            fi
-            if [ "$attempt" = "60" ]; then
-              echo "::error::postgres not reachable at PGHOST=${PGHOST} url=${DISPOSABLE_DATABASE_URL}" >&2
-              exit 2
-            fi
-            sleep 1
-          done
-          psql -v ON_ERROR_STOP=1 -c 'select 1 as disposable_postgres_ready'
-          export DISPOSABLE_VALIDATION_TRACK=clean
-          psql -v ON_ERROR_STOP=1 -f supabase/fixtures/disposable-test-prerequisites.sql
-          for migration in supabase/migrations/*.sql; do
-            psql -v ON_ERROR_STOP=1 -f "$migration"
-          done
-          psql -v ON_ERROR_STOP=1 -f supabase/verify/phase11_clean_install.sql || { echo "::error::verify failed phase11_clean_install.sql"; exit 3; }
-          for verify in supabase/verify/*.sql; do
-            if [[ "$(basename "$verify")" == "phase11_clean_install.sql" ]]; then
-              continue
-            fi
-            psql -v ON_ERROR_STOP=1 -f "$verify" || { echo "::error::verify failed $(basename "$verify")"; exit 3; }
-          done
-          for integration in scripts/integration/*.sh; do
-            bash "$integration" || { echo "::error::integration $(basename "$integration") failed with exit $?"; exit 12; }
-          done
-          psql -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = 'postgres_legacy' and pid <> pg_backend_pid()" || true
-          psql -v ON_ERROR_STOP=1 -c 'drop database if exists postgres_legacy'
-          psql -v ON_ERROR_STOP=1 -c 'create database postgres_legacy template template0'
-          export DISPOSABLE_VALIDATION_TRACK=legacy
-          export DISPOSABLE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_legacy
-          export PGDATABASE=postgres_legacy
-          psql -v ON_ERROR_STOP=1 -f supabase/fixtures/disposable-test-prerequisites.sql || { echo "::error::legacy fixture failed disposable-test-prerequisites.sql"; exit 20; }
-          psql -v ON_ERROR_STOP=1 -f supabase/legacy/fixtures/legacy-jobs-stub.sql || { echo "::error::legacy fixture failed legacy-jobs-stub.sql"; exit 20; }
-          psql -v ON_ERROR_STOP=1 -f supabase/legacy/migrations/20260814000000_create_job_processing_audit.sql || { echo "::error::legacy migration failed create_job_processing_audit.sql"; exit 20; }
-          for migration in supabase/migrations/*.sql; do
-            psql -v ON_ERROR_STOP=1 -f "$migration" || { echo "::error::legacy migration failed $(basename "$migration")"; exit 20; }
-          done
-          psql -v ON_ERROR_STOP=1 -f supabase/legacy/migrations/20260910180000_lockdown_legacy_jobs.sql || { echo "::error::legacy migration failed lockdown_legacy_jobs.sql"; exit 21; }
-          for verify in supabase/verify/*.sql; do
-            if [[ "$(basename "$verify")" == "phase11_clean_install.sql" ]]; then
-              continue
-            fi
-            psql -v ON_ERROR_STOP=1 -f "$verify" || { echo "::error::legacy verify failed $(basename "$verify")"; exit 21; }
-          done
-          for verify in supabase/legacy/verify/*.sql; do
-            psql -v ON_ERROR_STOP=1 -f "$verify" || { echo "::error::legacy verify failed $(basename "$verify")"; exit 21; }
-          done
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find scripts -name '*.sh' -print0)
+
+      - name: Disposable SQL migrations and verification
+        run: bash scripts/ci-disposable-validation.sh
