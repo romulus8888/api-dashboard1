@@ -72,7 +72,7 @@ run_clean_bootstrap() {
 }
 
 run_legacy_bootstrap() {
-  if [[ ! -f "$PREREQUISITES" || ! -f "$LEGACY_JOBS_FIXTURE ]]; then
+  if [[ ! -f "$PREREQUISITES" || ! -f "$LEGACY_JOBS_FIXTURE" ]]; then
     echo "Missing legacy fixture files under supabase/fixtures or supabase/legacy/fixtures" >&2
     exit 1
   fi
