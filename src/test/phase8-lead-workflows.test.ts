@@ -36,6 +36,8 @@ describe("phase8 lead n8n workflows", () => {
     expect(serialized).not.toContain("fieldToSplitOut");
     expect(expandNode?.type).toBe("n8n-nodes-base.code");
     expect(expandNode?.parameters?.jsCode).toBe(POSTGREST_LEAD_ARRAY_CODE);
+    expect(expandNode?.parameters?.jsCode).toContain("$input.all()");
+    expect(expandNode?.parameters?.jsCode).not.toContain("$input.first()");
 
     const fixture = expandPostgrestLeadArray([
       {
