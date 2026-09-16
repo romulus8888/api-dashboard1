@@ -73,9 +73,9 @@
       "position": [20, 0],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const input = $input.first()?.json;\nconst leads = Array.isArray(input)\n  ? input\n  : Array.isArray(input?.leads)\n    ? input.leads\n    : [];\n\nif (leads.length === 0) {\n  return [];\n}\n\nreturn leads.map((lead) => ({ json: lead }));"
+        "jsCode": "function isLead(value) {\n  return Boolean(value) && typeof value === \"object\" && typeof value.id === \"string\";\n}\n\nfunction collect(payload) {\n  if (Array.isArray(payload)) {\n    return payload;\n  }\n\n  if (!payload || typeof payload !== \"object\") {\n    return [];\n  }\n\n  if (Array.isArray(payload.leads)) {\n    return payload.leads;\n  }\n\n  if (isLead(payload)) {\n    return [payload];\n  }\n\n  const keys = Object.keys(payload);\n  if (keys.length > 0 && keys.every((key) => /^\\d+$/.test(key))) {\n    return keys\n      .sort((left, right) => Number(left) - Number(right))\n      .map((key) => payload[key]);\n  }\n\n  return [];\n}\n\nconst items = $input.all().map((item) => item.json);\nconst first = items[0];\nconst wrappedInFirstItem = Array.isArray(first) || Array.isArray(first?.leads);\nconst leads = (wrappedInFirstItem\n  ? collect(first)\n  : items.flatMap((payload) => collect(payload))\n).filter(isLead);\n\nif (leads.length === 0) {\n  return [];\n}\n\nreturn leads.map((lead) => ({ json: lead }));"
       },
-      "notes": "PostgREST returns a JSON array. Empty arrays stop the branch with zero items; multi-row arrays become one n8n item per lead."
+      "notes": "PostgREST JSON arrays may arrive as one item, as already-split n8n items, or as a numeric-key object. Empty results stop the branch with zero items."
     },
     {
       "id": "8a1f0c1e-0000-4a00-8000-000000000004",
